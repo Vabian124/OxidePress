@@ -494,6 +494,7 @@ async fn main() -> Result<()> {
         sessions: state.sessions.clone(),
         site_url,
         nonces: state.nonces.clone(),
+        plugins: state.plugin_registry.clone(),
     };
     app = app.merge(oxidepress_api::routes(api_state));
 

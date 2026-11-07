@@ -1,4 +1,4 @@
-# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Modified by Vabian124 on 2026-11-07 to read discovered plugin manifests.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [package]
@@ -14,6 +14,7 @@ oxidepress-core = { workspace = true }
 oxidepress-db = { workspace = true }
 oxidepress-query = { workspace = true }
 oxidepress-auth = { workspace = true }
+oxidepress-plugins = { workspace = true }
 oxidepress-themes = { workspace = true }
 axum = { workspace = true }
 sea-orm = { workspace = true }
