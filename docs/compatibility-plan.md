@@ -47,9 +47,10 @@ Each code item names one crate. A docs item says `docs`. Finish that item before
 
 ## Worker limits, checked 2026-11-07
 
-These are still true in `oxidepress-php` and `oxidepress-admin`. Nothing newer in this tree has done the code items below.
+`ABSPATH` follows the install layout. Plugins in `wp-content/plugins` use the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored, so a missing `version.php` or `wp-admin/includes/file.php` still fails the same way.
 
-- `ABSPATH` is the plugins directory plus a slash. That is wrong for a real WordPress root.
+These are still true in `oxidepress-php` and `oxidepress-admin`:
+
 - `POST /admin/plugins/{name}/activate` cannot contain a slash, so the route stores the display name. Restore accepts the display name or the basename.
 - `wp_enqueue_script`, `wp_enqueue_style`, `register_setting`, post types, and admin menus stay inside the worker. They do not print assets or draw a settings screen.
 - HTTP from the worker is absent.
@@ -57,11 +58,9 @@ These are still true in `oxidepress-php` and `oxidepress-admin`. Nothing newer i
 
 ## Next, in order
 
-1. Docs and ADR-002. `docs`. This page, the READMEs, and [ADR-002](adr/002-php-worker.en.md).
-2. Give the worker a real WordPress-root `ABSPATH`. Do not vendor `wp-admin` or `wp-includes`. `oxidepress-php`.
-3. Teach the admin activate route to store a basename that contains a slash. `oxidepress-admin`.
-4. `wp_enqueue_script`, `wp_enqueue_style`, and admin-menu registrations stay inside the worker. `docs`. This pass records that. They do not print assets or draw a settings screen. A later server screen for them would be `oxidepress-server`.
-5. HTTP from the worker, including the class of call Akismet's spam API needs. `oxidepress-php`. Do not start this by stubbing Contact Form 7's `require_once` of `wp-admin/includes/file.php`.
+1. Teach the admin activate route to store a basename that contains a slash. `oxidepress-admin`.
+2. `wp_enqueue_script`, `wp_enqueue_style`, and admin-menu registrations stay inside the worker. A later server screen for them would be `oxidepress-server`.
+3. HTTP from the worker, including the class of call Akismet's spam API needs. `oxidepress-php`. Do not start this by stubbing Contact Form 7's `require_once` of `wp-admin/includes/file.php`.
 
 ## Not this plan
 

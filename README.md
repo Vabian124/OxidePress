@@ -31,13 +31,13 @@ The probe on 2026-11-07 (PHP 8.3.36) is [crates/oxidepress-php/REAL-PLUGINS.md](
 
 ## What a dropped-in plugin cannot do
 
-- `ABSPATH` is the plugins directory plus a slash. That is wrong for a real WordPress root.
+- `ABSPATH` is the directory that contains `wp-content` when plugins live in `wp-content/plugins`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. It is not the plugins directory, and this tree does not vendor `wp-admin` or `wp-includes`.
 - Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
 - `POST /admin/plugins/{name}/activate` cannot contain a slash, so the admin route still stores the display name. Restore accepts either form.
 - Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
 - `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
 - HTTP from the worker is absent. Akismet cannot call its spam API from this process.
-- Health Check still warns because it includes `ABSPATH . 'wp-includes/version.php'`, and this process is not a WordPress tree.
+- Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 
 Multisite, WooCommerce lookup tables, variations, coupons, shipping, tax, payment gateways, Elementor, and Jetpack are outside the current plan.
 

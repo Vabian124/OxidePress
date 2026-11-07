@@ -87,7 +87,7 @@ The five native screens read and write the same kinds of rows as Yoast, ACF, Con
 
 `oxidepress-php` is one long-lived system `php` process. Rust speaks length-prefixed JSON. Hooks and shortcodes attach to `oxidepress-core`. Startup spawns that process only when an active plugin is `PluginType::Php`. The program is `OXIDEPRESS_PHP` or `php` on `PATH`. If `php` is missing, the site still boots and those plugins are marked Error.
 
-`ABSPATH` is currently the plugins directory plus a slash. That is wrong for a real WordPress root. Post types, admin menus, and script and style registrations stay inside the worker. HTTP from the worker is absent. The probe record is [crates/oxidepress-php/REAL-PLUGINS.md](../crates/oxidepress-php/REAL-PLUGINS.md). The decision is [ADR-002](adr/002-php-worker.en.md).
+When plugins live in `wp-content/plugins`, `ABSPATH` is the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. Core files are not vendored. Post types, admin menus, and script and style registrations stay inside the worker. HTTP from the worker is absent. The probe record is [crates/oxidepress-php/REAL-PLUGINS.md](../crates/oxidepress-php/REAL-PLUGINS.md). The decision is [ADR-002](adr/002-php-worker.en.md).
 
 Requests for a `.php` file are blocked by middleware in `oxidepress-server`, apart from the routes the server itself handles. The worker is a separate process. It is not a request uploading a `.php` file into the web root.
 

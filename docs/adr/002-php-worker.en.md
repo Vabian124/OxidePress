@@ -65,12 +65,12 @@ What the worker does:
 
 What it does not do:
 
-- `ABSPATH` is the plugins directory plus a slash. That is wrong for a real WordPress root. Giving it a real root, without vendoring `wp-admin` or `wp-includes`, is later work in `oxidepress-php`.
+- When plugins live in `wp-content/plugins`, `ABSPATH` is the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored.
 - Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
 - `POST /admin/plugins/{name}/activate` cannot contain a slash, so `oxidepress-admin` still stores the display name. Restore accepts either form.
 - Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
 - `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
 - HTTP from the worker is absent.
-- Health Check still warns on `ABSPATH . 'wp-includes/version.php'`, because this process is not a WordPress tree.
+- Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 
 Requests for a `.php` file are still blocked by server middleware. The worker is a separate process the server starts. It is not a request uploading a `.php` file into the web root.

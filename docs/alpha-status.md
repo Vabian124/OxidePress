@@ -8,7 +8,7 @@ The shop, product, cart, and checkout pages use the active theme, including its 
 
 Themes in this tree are Tera themes. PHP themes do not run.
 
-A dropped-in PHP plugin can boot in one `oxidepress-php` worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. `ABSPATH` is the plugins directory plus a slash. Deactivating one plugin needs a process restart. The admin activate route still stores the display name, because the path cannot contain a slash. Enqueue and admin-menu registrations stay inside the worker. HTTP from the worker is absent. `current_user_can()`, `is_admin()`, and `is_multisite()` are false. Activation callbacks are not run on load.
+A dropped-in PHP plugin can boot in one `oxidepress-php` worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. `ABSPATH` is the WordPress root when the plugins directory is `wp-content/plugins` or an ancestor contains `wp-load.php`. Otherwise it is the parent of the plugins directory. Core files are not vendored. Deactivating one plugin needs a process restart. The admin activate route still stores the display name, because the path cannot contain a slash. Enqueue and admin-menu registrations stay inside the worker. HTTP from the worker is absent. `current_user_can()`, `is_admin()`, and `is_multisite()` are false. Activation callbacks are not run on load.
 
 The names Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce in the admin are OxidePress screens (`oxidepress-seo`, `oxidepress-fields`, `oxidepress-forms`, `oxidepress-security`, `oxidepress-commerce`) that read and write the same kinds of rows. They are not a claim that the WordPress.org plugins are fully reimplemented.
 

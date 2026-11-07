@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to run WordPress plugins in a PHP worker.
+// Modified by Vabian124 on 2026-11-07 to run WordPress plugins and set ABSPATH from the install layout.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -936,5 +936,102 @@ mod tests {
         );
         assert_eq!(runtime.take_output("admin_notices"), "Hello Dolly");
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+    }
+
+    fn slash(path: &Path) -> String {
+        path.to_string_lossy().replace('\\', "/")
+    }
+
+    fn write_abspath_probe(plugins: &Path) {
+        let dir = plugins.join("abspath-probe");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("abspath-probe.php"),
+            r#"<?php
+/**
+ * Plugin Name: ABSPATH Probe
+ */
+add_action('init', function () {
+    update_option('probe_abspath', ABSPATH);
+    update_option('probe_plugin_dir', WP_PLUGIN_DIR);
+    update_option('probe_content_dir', WP_CONTENT_DIR);
+    update_option('probe_uploads', wp_upload_dir()['basedir']);
+});
+"#,
+        )
+        .unwrap();
+    }
+
+    fn probe_paths(plugins: &Path) -> (String, String, String, String) {
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(plugins), None, host.clone()).unwrap();
+        let found = discover(plugins).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "ABSPATH Probe")
+            .unwrap();
+        let loaded = runtime.load(plugin).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        runtime.attach(&hooks, &shortcodes, &loaded);
+        hooks.do_action("init", &json!({}));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        (
+            host.get_option("probe_abspath").unwrap(),
+            host.get_option("probe_plugin_dir").unwrap(),
+            host.get_option("probe_content_dir").unwrap(),
+            host.get_option("probe_uploads").unwrap(),
+        )
+    }
+
+    #[test]
+    fn php_abspath_follows_the_install_layout() {
+        if !php_bin_works() {
+            eprintln!("skipping php integration test: php is not on PATH");
+            return;
+        }
+
+        let root = std::env::temp_dir().join(format!("oxidepress-abspath-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+
+        let standard = root.join("standard").join("wp-content").join("plugins");
+        write_abspath_probe(&standard);
+        let (abspath, plugin_dir, content_dir, uploads) = probe_paths(&standard);
+        assert_eq!(abspath, format!("{}/", slash(&root.join("standard"))));
+        assert_eq!(plugin_dir, slash(&standard));
+        assert_eq!(
+            content_dir,
+            slash(&root.join("standard").join("wp-content"))
+        );
+        assert_eq!(
+            uploads,
+            format!(
+                "{}/uploads",
+                slash(&root.join("standard").join("wp-content"))
+            )
+        );
+
+        let loose_root = root.join("loose");
+        let loose = loose_root.join("dropped");
+        write_abspath_probe(&loose);
+        let (abspath, plugin_dir, content_dir, uploads) = probe_paths(&loose);
+        assert_eq!(abspath, format!("{}/", slash(&loose_root)));
+        assert_ne!(abspath.trim_end_matches('/'), slash(&loose));
+        assert_eq!(plugin_dir, slash(&loose));
+        assert_eq!(content_dir, slash(&loose_root));
+        assert_eq!(uploads, format!("{}/uploads", slash(&loose_root)));
+
+        let loaded_root = root.join("with-load");
+        std::fs::create_dir_all(&loaded_root).unwrap();
+        std::fs::write(loaded_root.join("wp-load.php"), "<?php\n").unwrap();
+        let custom = loaded_root.join("custom");
+        write_abspath_probe(&custom);
+        let (abspath, plugin_dir, content_dir, _) = probe_paths(&custom);
+        assert_eq!(abspath, format!("{}/", slash(&loaded_root)));
+        assert_eq!(plugin_dir, slash(&custom));
+        assert_eq!(content_dir, slash(&loaded_root));
+
+        let _ = std::fs::remove_dir_all(&root);
     }
 }

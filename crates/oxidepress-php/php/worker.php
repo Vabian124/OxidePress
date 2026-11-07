@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-07 to host WordPress plugins inside OxidePress.
+// Modified by Vabian124 on 2026-11-07 to host WordPress plugins and set ABSPATH from the install layout.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -34,14 +34,26 @@ $GLOBALS['wp_version'] = '6.8.3';
 
 $oxidepress_plugins_dir = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
 if (!defined('ABSPATH')) {
-    if ($oxidepress_plugins_dir !== '') {
-        define('ABSPATH', rtrim(str_replace('\\', '/', $oxidepress_plugins_dir), '/') . '/');
-    } else {
-        define('ABSPATH', rtrim(str_replace('\\', '/', getcwd()), '/') . '/');
-    }
+    define('ABSPATH', oxidepress_abspath_from_plugins($oxidepress_plugins_dir));
 }
 if (!defined('WPINC')) {
     define('WPINC', 'wp-includes');
+}
+if (!defined('WP_CONTENT_DIR')) {
+    define('WP_CONTENT_DIR', oxidepress_content_dir($oxidepress_plugins_dir, ABSPATH));
+}
+if (!defined('WP_PLUGIN_DIR')) {
+    $oxidepress_plugin_dir = rtrim(oxidepress_normalize_path($oxidepress_plugins_dir), '/');
+    if ($oxidepress_plugin_dir === '') {
+        $oxidepress_plugin_dir = rtrim(oxidepress_normalize_path(WP_CONTENT_DIR), '/') . '/plugins';
+    }
+    define('WP_PLUGIN_DIR', $oxidepress_plugin_dir);
+}
+if (!defined('WP_CONTENT_URL')) {
+    define('WP_CONTENT_URL', site_url('wp-content'));
+}
+if (!defined('WP_PLUGIN_URL')) {
+    define('WP_PLUGIN_URL', site_url('wp-content/plugins'));
 }
 
 register_shutdown_function('oxidepress_shutdown');
@@ -805,12 +817,7 @@ function wp_localize_script($handle, $object_name, $data)
 function wp_upload_dir($time = null, $create_dir = true, $refresh = false)
 {
     $baseurl = site_url('wp-content/uploads');
-    $plugins = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
-    if ($plugins !== '') {
-        $basedir = rtrim(oxidepress_normalize_path(dirname($plugins)), '/') . '/uploads';
-    } else {
-        $basedir = rtrim(oxidepress_normalize_path(getcwd()), '/') . '/wp-content/uploads';
-    }
+    $basedir = rtrim(oxidepress_normalize_path(WP_CONTENT_DIR), '/') . '/uploads';
     return array(
         'path' => $basedir,
         'url' => $baseurl,
@@ -1171,6 +1178,105 @@ class WP_Widget
     {
         return 'widget-' . $this->id_base . '[' . $field_name . ']';
     }
+}
+
+function oxidepress_abspath_from_plugins($plugins_dir)
+{
+    $plugins = rtrim(oxidepress_normalize_path($plugins_dir), '/');
+    if ($plugins === '') {
+        $cwd = rtrim(oxidepress_normalize_path(getcwd()), '/');
+        return oxidepress_trail($cwd);
+    }
+
+    $parent = oxidepress_dir_name($plugins);
+    $grand = oxidepress_dir_name($parent);
+    if (oxidepress_path_is(oxidepress_base_name($plugins), 'plugins')
+        && oxidepress_path_is(oxidepress_base_name($parent), 'wp-content')
+        && $grand !== ''
+        && $grand !== $parent
+    ) {
+        return oxidepress_trail($grand);
+    }
+
+    $cursor = $parent;
+    for ($step = 0; $step < 8; $step++) {
+        if ($cursor === '' || $cursor === '/' || $cursor === '.') {
+            break;
+        }
+        if (is_file($cursor . '/wp-load.php')) {
+            return oxidepress_trail($cursor);
+        }
+        $next = oxidepress_dir_name($cursor);
+        if ($next === '' || $next === $cursor) {
+            break;
+        }
+        $cursor = $next;
+    }
+
+    if ($parent !== '' && $parent !== $plugins) {
+        return oxidepress_trail($parent);
+    }
+    return oxidepress_trail($plugins);
+}
+
+function oxidepress_content_dir($plugins_dir, $abspath)
+{
+    $plugins = rtrim(oxidepress_normalize_path($plugins_dir), '/');
+    if ($plugins === '') {
+        return rtrim(oxidepress_normalize_path($abspath), '/') . '/wp-content';
+    }
+    $parent = oxidepress_dir_name($plugins);
+    if (oxidepress_path_is(oxidepress_base_name($parent), 'wp-content')) {
+        return $parent;
+    }
+    $beside = rtrim(oxidepress_normalize_path($abspath), '/') . '/wp-content';
+    if (is_dir($beside)) {
+        return rtrim(oxidepress_normalize_path($beside), '/');
+    }
+    return $parent === '' ? rtrim(oxidepress_normalize_path($abspath), '/') : $parent;
+}
+
+function oxidepress_dir_name($path)
+{
+    $path = rtrim(oxidepress_normalize_path($path), '/');
+    if ($path === '' || $path === '/') {
+        return '';
+    }
+    $slash = strrpos($path, '/');
+    if ($slash === false) {
+        return '';
+    }
+    if ($slash === 0) {
+        return '/';
+    }
+    return substr($path, 0, $slash);
+}
+
+function oxidepress_base_name($path)
+{
+    $path = rtrim(oxidepress_normalize_path($path), '/');
+    $slash = strrpos($path, '/');
+    if ($slash === false) {
+        return $path;
+    }
+    return substr($path, $slash + 1);
+}
+
+function oxidepress_trail($path)
+{
+    $path = rtrim(oxidepress_normalize_path($path), '/');
+    if ($path === '') {
+        return '/';
+    }
+    return $path . '/';
+}
+
+function oxidepress_path_is($name, $expected)
+{
+    if (DIRECTORY_SEPARATOR === '\\') {
+        return strcasecmp($name, $expected) === 0;
+    }
+    return $name === $expected;
 }
 
 function oxidepress_normalize_path($path)

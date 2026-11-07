@@ -11,3 +11,4 @@ reviews/
 *.bak
 test-projects/
 tools/wp-ref/
+themes/twentytwentyfive/static/theme-generated.css

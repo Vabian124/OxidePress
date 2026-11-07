@@ -31,13 +31,13 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 
 ## ドロップインのプラグインにできないこと
 
-- `ABSPATH` はプラグインディレクトリにスラッシュを足した値である。本物の WordPress ルートとしては誤りである。
+- プラグインが `wp-content/plugins` にあるとき、`ABSPATH` は `wp-content` を含むディレクトリである。そうでなければ、`wp-load.php` がある祖先を使う。どちらも無いときは、プラグインディレクトリの親である。プラグインディレクトリそのものではなく、このツリーは `wp-admin` も `wp-includes` も同梱しない。
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
 - `POST /admin/plugins/{name}/activate` はスラッシュを含められない。そのため管理ルートは、いまも表示名を保存する。復元はどちらの形も受け付ける。
 - 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - ワーカーからの HTTP は無い。Akismet はこのプロセスからスパム API を呼べない。
-- Health Check は `ABSPATH . 'wp-includes/version.php'` を include するため、いまも警告する。このプロセスは WordPress ツリーではない。
+- `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。
 
 マルチサイト、WooCommerce のルックアップテーブル、バリエーション、クーポン、配送、税、決済ゲートウェイ、Elementor、Jetpack は、今の計画の外である。
 
