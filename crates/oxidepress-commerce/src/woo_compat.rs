@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and accept a product picture URL.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! WooCommerce compatibility layer.
@@ -62,6 +62,8 @@ pub mod product_keys {
     pub const VIRTUAL: &str = "_virtual";
     pub const DOWNLOADABLE: &str = "_downloadable";
     pub const IMAGE_GALLERY: &str = "_product_image_gallery";
+    /// OxidePress storefront picture. WooCommerce uses an attachment id; this is a URL or site path.
+    pub const IMAGE_URL: &str = "_oxidepress_image_url";
     pub const TAX_STATUS: &str = "_tax_status";
     pub const TAX_CLASS: &str = "_tax_class";
     pub const BACKORDERS: &str = "_backorders";
@@ -160,6 +162,7 @@ pub struct WooProductData {
     pub is_virtual: bool,
     pub is_downloadable: bool,
     pub image_gallery: Vec<u64>,
+    pub image_url: String,
     pub tax_status: String,
     pub tax_class: String,
     pub backorders: String,
@@ -215,6 +218,7 @@ impl WooProductData {
                 .get(product_keys::DOWNLOADABLE)
                 .is_some_and(|v| v == "yes"),
             image_gallery: gallery_ids,
+            image_url: get_str(meta, product_keys::IMAGE_URL),
             tax_status: meta
                 .get(product_keys::TAX_STATUS)
                 .cloned()
@@ -274,6 +278,9 @@ impl WooProductData {
             let ids: Vec<String> = self.image_gallery.iter().map(|id| id.to_string()).collect();
             pairs.push((product_keys::IMAGE_GALLERY.into(), ids.join(",")));
         }
+        if !self.image_url.is_empty() {
+            pairs.push((product_keys::IMAGE_URL.into(), self.image_url.clone()));
+        }
         pairs.push((product_keys::TAX_STATUS.into(), self.tax_status.clone()));
         if !self.tax_class.is_empty() {
             pairs.push((product_keys::TAX_CLASS.into(), self.tax_class.clone()));
@@ -314,6 +321,12 @@ impl WooProductData {
 
         let now = Utc::now();
 
+        let images = if !self.image_url.is_empty() {
+            vec![self.image_url.clone()]
+        } else {
+            self.image_gallery.iter().map(|id| id.to_string()).collect()
+        };
+
         Product {
             id: self.post_id,
             name: self.name.clone(),
@@ -329,7 +342,7 @@ impl WooProductData {
             product_type,
             categories: vec![],
             tags: vec![],
-            images: self.image_gallery.iter().map(|id| id.to_string()).collect(),
+            images,
             weight: self.weight,
             dimensions,
             attributes: vec![],
@@ -338,6 +351,123 @@ impl WooProductData {
             updated_at: now,
         }
     }
+}
+
+/// Fields the product editor sends. Prices are the storefront numbers, not a free-form string.
+#[derive(Debug, Clone)]
+pub struct ProductDraft {
+    pub name: String,
+    pub description: String,
+    pub short_description: String,
+    pub sku: String,
+    pub regular_price: f64,
+    pub sale_price: Option<f64>,
+    pub stock_quantity: Option<i64>,
+    pub image_url: String,
+    pub publish: bool,
+}
+
+impl ProductDraft {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if self.name.trim().is_empty() {
+            return Err("A product name is required.");
+        }
+        if self.regular_price < 0.0 || self.sale_price.is_some_and(|price| price < 0.0) {
+            return Err("Prices cannot be negative.");
+        }
+        if self.sale_price.is_some_and(|sale| {
+            sale > 0.0 && self.regular_price > 0.0 && sale >= self.regular_price
+        }) {
+            return Err("The sale price must be lower than the regular price.");
+        }
+        if !image_url_is_safe(&self.image_url) {
+            return Err("The picture must be an http(s) URL or a site path.");
+        }
+        if self.stock_quantity.is_some_and(|qty| qty < 0) {
+            return Err("Stock cannot be negative.");
+        }
+        Ok(())
+    }
+
+    /// The price a customer pays. A sale replaces the regular price only when it is lower.
+    pub fn effective_price(&self) -> f64 {
+        match self.sale_price {
+            Some(sale)
+                if sale > 0.0 && (self.regular_price <= 0.0 || sale < self.regular_price) =>
+            {
+                sale
+            }
+            _ => self.regular_price,
+        }
+    }
+
+    pub fn slug_from_name(name: &str) -> String {
+        let mut slug = String::new();
+        let mut previous_dash = false;
+        for ch in name.chars() {
+            if ch.is_ascii_alphanumeric() {
+                slug.push(ch.to_ascii_lowercase());
+                previous_dash = false;
+            } else if !previous_dash && !slug.is_empty() {
+                slug.push('-');
+                previous_dash = true;
+            }
+        }
+        let slug = slug.trim_matches('-').to_string();
+        if slug.is_empty() {
+            "product".to_string()
+        } else {
+            slug
+        }
+    }
+
+    pub fn to_woo(&self, slug: &str) -> WooProductData {
+        let sale = self.sale_price.filter(|price| *price > 0.0);
+        let (stock_status, manage_stock) = match self.stock_quantity {
+            Some(qty) if qty <= 0 => ("outofstock".to_string(), true),
+            Some(_) => ("instock".to_string(), true),
+            None => ("instock".to_string(), false),
+        };
+        WooProductData {
+            name: self.name.trim().to_string(),
+            slug: slug.to_string(),
+            description: self.description.clone(),
+            short_description: self.short_description.clone(),
+            sku: self.sku.trim().to_string(),
+            price: self.effective_price(),
+            regular_price: self.regular_price,
+            sale_price: sale,
+            stock_quantity: self.stock_quantity,
+            stock_status,
+            manage_stock,
+            product_type: "simple".to_string(),
+            image_url: self.image_url.trim().to_string(),
+            tax_status: "taxable".to_string(),
+            backorders: "no".to_string(),
+            ..WooProductData::default()
+        }
+    }
+
+    pub fn status(&self) -> &'static str {
+        if self.publish {
+            "publish"
+        } else {
+            "draft"
+        }
+    }
+}
+
+/// Reject `javascript:` and protocol-relative URLs. Empty is allowed.
+pub fn image_url_is_safe(url: &str) -> bool {
+    let url = url.trim();
+    if url.is_empty() {
+        return true;
+    }
+    if url.starts_with('/') && !url.starts_with("//") {
+        return !url.contains("..");
+    }
+    let lower = url.to_ascii_lowercase();
+    lower.starts_with("https://") || lower.starts_with("http://")
 }
 
 /// WooCommerce-compatible order data read from wp_posts + wp_postmeta.
@@ -781,6 +911,48 @@ mod tests {
         assert_eq!(order.total, 0.0);
         assert_eq!(order.currency, "USD");
         assert!(order.customer_id.is_none());
+    }
+
+    #[test]
+    fn test_product_draft_sale_and_picture() {
+        let draft = ProductDraft {
+            name: "  Ceramic Mug  ".to_string(),
+            description: "Holds coffee.".to_string(),
+            short_description: "A mug".to_string(),
+            sku: "MUG-1".to_string(),
+            regular_price: 24.0,
+            sale_price: Some(18.0),
+            stock_quantity: Some(5),
+            image_url: "https://example.com/mug.jpg".to_string(),
+            publish: true,
+        };
+        draft.validate().unwrap();
+        assert_eq!(draft.effective_price(), 18.0);
+        assert_eq!(ProductDraft::slug_from_name(&draft.name), "ceramic-mug");
+        let woo = draft.to_woo("ceramic-mug");
+        assert_eq!(woo.price, 18.0);
+        assert_eq!(woo.regular_price, 24.0);
+        assert_eq!(woo.image_url, "https://example.com/mug.jpg");
+        assert!(woo
+            .to_meta()
+            .iter()
+            .any(|(key, _)| key == "_oxidepress_image_url"));
+        let product = woo.to_product();
+        assert_eq!(
+            product.images,
+            vec!["https://example.com/mug.jpg".to_string()]
+        );
+
+        let bad_sale = ProductDraft {
+            sale_price: Some(30.0),
+            ..draft.clone()
+        };
+        assert!(bad_sale.validate().is_err());
+        let bad_image = ProductDraft {
+            image_url: "javascript:alert(1)".to_string(),
+            ..draft
+        };
+        assert!(bad_image.validate().is_err());
     }
 
     #[test]

@@ -11,8 +11,9 @@
 //! - Wordfence Security Dashboard
 
 use axum::{
-    extract::{Extension, Form, State},
-    response::Html,
+    extract::{Extension, Form, Query, State},
+    http::StatusCode,
+    response::{Html, IntoResponse, Redirect, Response},
     routing::get,
     Router,
 };
@@ -23,13 +24,14 @@ use sea_orm::{
 use serde::Deserialize;
 use std::sync::Arc;
 
+use oxidepress_auth::roles::Capability;
 use oxidepress_auth::session::Session;
-use oxidepress_commerce::woo_compat;
+use oxidepress_commerce::woo_compat::{self, ProductDraft};
 use oxidepress_db::entities::{wp_postmeta, wp_posts};
 use oxidepress_db::queries;
 use oxidepress_security::{scanner::ScannerContext, SecurityScanner};
 
-use crate::middleware::{require_admin, require_admin_session};
+use crate::middleware::{require_admin, require_admin_session, resolve_session_role};
 use crate::state::AppState;
 
 // Re-use the same AdminPostsQuery from wp_admin
@@ -121,7 +123,7 @@ pub async fn wc_products_page(
     session: Session,
     params: PluginPostsQuery,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "wc-products");
 
     let page = params.page.unwrap_or(1);
@@ -200,7 +202,7 @@ pub async fn wc_products_page(
     ctx.insert("total_pages", &total_pages);
     ctx.insert("status_filter", &status_filter);
 
-    render_admin(&state, "admin/woocommerce-products.html", &ctx)
+    super::wp_admin::render_admin(&state, "admin/woocommerce-products.html", &ctx)
 }
 
 // =============================================================================
@@ -212,7 +214,7 @@ pub async fn wc_orders_page(
     session: Session,
     params: PluginPostsQuery,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "wc-orders");
 
     let page = params.page.unwrap_or(1);
@@ -309,7 +311,324 @@ pub async fn wc_orders_page(
     ctx.insert("total_pages", &total_pages);
     ctx.insert("status_filter", &status_filter);
 
-    render_admin(&state, "admin/woocommerce-orders.html", &ctx)
+    super::wp_admin::render_admin(&state, "admin/woocommerce-orders.html", &ctx)
+}
+
+// =============================================================================
+// Product editor
+// =============================================================================
+
+#[derive(Deserialize)]
+pub struct ProductEditQuery {
+    pub post: Option<u64>,
+    pub notice: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct ProductForm {
+    post_id: Option<u64>,
+    name: String,
+    description: Option<String>,
+    short_description: Option<String>,
+    sku: Option<String>,
+    regular_price: String,
+    sale_price: Option<String>,
+    stock_quantity: Option<String>,
+    image_url: Option<String>,
+    status: Option<String>,
+}
+
+async fn shop_allowed(state: &AppState, session: &Session) -> bool {
+    resolve_session_role(session, &state.db)
+        .await
+        .is_some_and(|role| role.can(&Capability::ManageWooCommerce))
+}
+
+fn parse_money(raw: &str) -> Result<f64, &'static str> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(0.0);
+    }
+    raw.parse::<f64>()
+        .map_err(|_| "Enter prices as numbers, such as 18.00.")
+}
+
+fn parse_optional_money(raw: &str) -> Result<Option<f64>, &'static str> {
+    let raw = raw.trim();
+    if raw.is_empty() {
+        return Ok(None);
+    }
+    raw.parse::<f64>()
+        .map(Some)
+        .map_err(|_| "Enter prices as numbers, such as 18.00.")
+}
+
+fn draft_from_form(form: &ProductForm) -> Result<ProductDraft, &'static str> {
+    let stock = match form.stock_quantity.as_deref().unwrap_or("").trim() {
+        "" => None,
+        raw => Some(
+            raw.parse::<i64>()
+                .map_err(|_| "Stock must be a whole number.")?,
+        ),
+    };
+    Ok(ProductDraft {
+        name: form.name.clone(),
+        description: form.description.clone().unwrap_or_default(),
+        short_description: form.short_description.clone().unwrap_or_default(),
+        sku: form.sku.clone().unwrap_or_default(),
+        regular_price: parse_money(&form.regular_price)?,
+        sale_price: parse_optional_money(form.sale_price.as_deref().unwrap_or(""))?,
+        stock_quantity: stock,
+        image_url: form.image_url.clone().unwrap_or_default(),
+        publish: form.status.as_deref() != Some("draft"),
+    })
+}
+
+async fn unique_product_slug(
+    db: &sea_orm::DatabaseConnection,
+    base: &str,
+    except_id: u64,
+) -> String {
+    let mut candidate = base.to_string();
+    for n in 2..50 {
+        let existing = wp_posts::Entity::find()
+            .filter(wp_posts::Column::PostName.eq(&candidate))
+            .one(db)
+            .await
+            .ok()
+            .flatten();
+        match existing {
+            Some(post) if post.id != except_id => {
+                candidate = format!("{base}-{n}");
+            }
+            _ => return candidate,
+        }
+    }
+    format!("{base}-{except_id}")
+}
+
+pub(crate) async fn wc_product_editor(
+    State(state): State<Arc<AppState>>,
+    Extension(session): Extension<Session>,
+    Query(params): Query<ProductEditQuery>,
+) -> Response {
+    if !shop_allowed(&state, &session).await {
+        return (
+            StatusCode::FORBIDDEN,
+            "Sorry, you are not allowed to manage products.",
+        )
+            .into_response();
+    }
+
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
+    ctx.insert("active_page", "wc-products");
+    ctx.insert("error", "");
+    ctx.insert("notice_message", &params.notice.unwrap_or_default());
+
+    let post_id = params.post.unwrap_or(0);
+    if post_id > 0 {
+        let post = wp_posts::Entity::find_by_id(post_id)
+            .one(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .filter(|post| post.post_type == woo_compat::post_types::PRODUCT);
+        let Some(post) = post else {
+            return (StatusCode::NOT_FOUND, "Product not found.").into_response();
+        };
+        let meta = queries::get_post_meta_map(&state.db, post.id)
+            .await
+            .unwrap_or_default();
+        let woo = woo_compat::WooProductData::from_post_and_meta(
+            post.id,
+            &post.post_title,
+            &post.post_name,
+            &post.post_content,
+            &post.post_excerpt,
+            &meta,
+        );
+        ctx.insert("is_new", &false);
+        ctx.insert("post_id", &post.id);
+        ctx.insert("name", &woo.name);
+        ctx.insert("description", &woo.description);
+        ctx.insert("short_description", &woo.short_description);
+        ctx.insert("sku", &woo.sku);
+        ctx.insert("regular_price", &format!("{:.2}", woo.regular_price));
+        ctx.insert(
+            "sale_price",
+            &woo.sale_price
+                .map(|price| format!("{price:.2}"))
+                .unwrap_or_default(),
+        );
+        ctx.insert(
+            "stock_quantity",
+            &woo.stock_quantity
+                .map(|qty| qty.to_string())
+                .unwrap_or_default(),
+        );
+        ctx.insert("image_url", &woo.image_url);
+        ctx.insert("status", &post.post_status);
+        ctx.insert("slug", &woo.slug);
+    } else {
+        ctx.insert("is_new", &true);
+        ctx.insert("post_id", &0u64);
+        ctx.insert("name", "");
+        ctx.insert("description", "");
+        ctx.insert("short_description", "");
+        ctx.insert("sku", "");
+        ctx.insert("regular_price", "");
+        ctx.insert("sale_price", "");
+        ctx.insert("stock_quantity", "");
+        ctx.insert("image_url", "");
+        ctx.insert("status", "publish");
+        ctx.insert("slug", "");
+    }
+
+    super::wp_admin::render_admin(&state, "admin/woocommerce-product-edit.html", &ctx)
+        .into_response()
+}
+
+pub(crate) async fn wc_product_save(
+    State(state): State<Arc<AppState>>,
+    Extension(session): Extension<Session>,
+    Form(form): Form<ProductForm>,
+) -> Response {
+    if !shop_allowed(&state, &session).await {
+        return (
+            StatusCode::FORBIDDEN,
+            "Sorry, you are not allowed to manage products.",
+        )
+            .into_response();
+    }
+
+    let draft = match draft_from_form(&form) {
+        Ok(draft) => draft,
+        Err(error) => return product_form_error(&state, &session, &form, error).await,
+    };
+    if let Err(error) = draft.validate() {
+        return product_form_error(&state, &session, &form, error).await;
+    }
+
+    let existing_id = form.post_id.unwrap_or(0);
+    let base_slug = ProductDraft::slug_from_name(&draft.name);
+    let slug = unique_product_slug(&state.db, &base_slug, existing_id).await;
+    let woo = draft.to_woo(&slug);
+    let now = chrono::Utc::now().naive_utc();
+
+    let saved_id = if existing_id > 0 {
+        let post = wp_posts::Entity::find_by_id(existing_id)
+            .one(&state.db)
+            .await
+            .ok()
+            .flatten()
+            .filter(|post| post.post_type == woo_compat::post_types::PRODUCT);
+        let Some(post) = post else {
+            return (StatusCode::NOT_FOUND, "Product not found.").into_response();
+        };
+        let mut active: wp_posts::ActiveModel = post.into();
+        active.post_title = Set(woo.name.clone());
+        active.post_content = Set(woo.description.clone());
+        active.post_excerpt = Set(woo.short_description.clone());
+        active.post_name = Set(slug.clone());
+        active.post_status = Set(draft.status().to_string());
+        active.post_modified = Set(now);
+        active.post_modified_gmt = Set(now);
+        if active.update(&state.db).await.is_err() {
+            return product_form_error(&state, &session, &form, "Could not update the product.")
+                .await;
+        }
+        existing_id
+    } else {
+        let new_post = wp_posts::ActiveModel {
+            post_author: Set(session.user_id),
+            post_date: Set(now),
+            post_date_gmt: Set(now),
+            post_content: Set(woo.description.clone()),
+            post_title: Set(woo.name.clone()),
+            post_excerpt: Set(woo.short_description.clone()),
+            post_status: Set(draft.status().to_string()),
+            comment_status: Set("closed".to_string()),
+            ping_status: Set("closed".to_string()),
+            post_password: Set(String::new()),
+            post_name: Set(slug.clone()),
+            to_ping: Set(String::new()),
+            pinged: Set(String::new()),
+            post_modified: Set(now),
+            post_modified_gmt: Set(now),
+            post_content_filtered: Set(String::new()),
+            post_parent: Set(0),
+            guid: Set(String::new()),
+            menu_order: Set(0),
+            post_type: Set(woo_compat::post_types::PRODUCT.to_string()),
+            post_mime_type: Set(String::new()),
+            comment_count: Set(0),
+            ..Default::default()
+        };
+        match new_post.insert(&state.db).await {
+            Ok(inserted) => inserted.id,
+            Err(error) => {
+                tracing::error!(%error, "product insert failed");
+                return product_form_error(
+                    &state,
+                    &session,
+                    &form,
+                    "Could not create the product.",
+                )
+                .await;
+            }
+        }
+    };
+
+    if let Err(error) = queries::set_post_meta_bulk(&state.db, saved_id, &woo.to_meta()).await {
+        tracing::error!(%error, "product meta save failed");
+        return product_form_error(
+            &state,
+            &session,
+            &form,
+            "The product was saved but its price could not.",
+        )
+        .await;
+    }
+
+    Redirect::to(&format!(
+        "/wp-admin/wc-product-edit.php?post={saved_id}&notice=Saved"
+    ))
+    .into_response()
+}
+
+async fn product_form_error(
+    state: &AppState,
+    session: &Session,
+    form: &ProductForm,
+    error: &str,
+) -> Response {
+    let mut ctx = super::wp_admin::admin_context(state, session).await;
+    ctx.insert("active_page", "wc-products");
+    ctx.insert("error", error);
+    ctx.insert("notice_message", "");
+    ctx.insert("is_new", &(form.post_id.unwrap_or(0) == 0));
+    ctx.insert("post_id", &form.post_id.unwrap_or(0));
+    ctx.insert("name", &form.name);
+    ctx.insert("description", &form.description.clone().unwrap_or_default());
+    ctx.insert(
+        "short_description",
+        &form.short_description.clone().unwrap_or_default(),
+    );
+    ctx.insert("sku", &form.sku.clone().unwrap_or_default());
+    ctx.insert("regular_price", &form.regular_price);
+    ctx.insert("sale_price", &form.sale_price.clone().unwrap_or_default());
+    ctx.insert(
+        "stock_quantity",
+        &form.stock_quantity.clone().unwrap_or_default(),
+    );
+    ctx.insert("image_url", &form.image_url.clone().unwrap_or_default());
+    ctx.insert(
+        "status",
+        &form.status.clone().unwrap_or_else(|| "publish".to_string()),
+    );
+    ctx.insert("slug", "");
+    super::wp_admin::render_admin(state, "admin/woocommerce-product-edit.html", &ctx)
+        .into_response()
 }
 
 // =============================================================================

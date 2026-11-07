@@ -37,9 +37,9 @@
         <tr>
             <td><input type="checkbox" value="{{ product.id }}"></td>
             <td class="column-title">
-                <strong><a href="/wp-admin/post.php?post={{ product.id }}&action=edit">{{ product.name }}</a></strong>
+                <strong><a href="/wp-admin/wc-product-edit.php?post={{ product.id }}">{{ product.name }}</a></strong>
                 <div class="row-actions">
-                    <a href="/wp-admin/post.php?post={{ product.id }}&action=edit">Edit</a> |
+                    <a href="/wp-admin/wc-product-edit.php?post={{ product.id }}">Edit</a> |
                     <a href="/{{ product.slug }}/" target="_blank">View</a> |
                     <a href="#" class="delete-product" data-id="{{ product.id }}" style="color:#b32d2e">Trash</a>
                 </div>

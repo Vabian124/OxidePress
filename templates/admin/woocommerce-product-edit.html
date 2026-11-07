@@ -1,0 +1,79 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{% if is_new %}Add product{% else %}Edit product{% endif %}{% endblock %}
+
+{% block content %}
+<h1>{% if is_new %}Add product{% else %}Edit product{% endif %}</h1>
+
+{% if error %}
+<div class="notice notice-error"><p>{{ error }}</p></div>
+{% endif %}
+{% if notice_message %}
+<div class="notice notice-success"><p>{{ notice_message }}</p></div>
+{% endif %}
+
+<form method="post" action="{% if is_new %}/wp-admin/wc-product-new.php{% else %}/wp-admin/wc-product-edit.php{% endif %}">
+    <input type="hidden" name="post_id" value="{{ post_id }}">
+    <table class="form-table">
+        <tr>
+            <th><label for="name">Name</label></th>
+            <td><input type="text" name="name" id="name" class="regular-text" value="{{ name }}" required></td>
+        </tr>
+        <tr>
+            <th><label for="short_description">Short description</label></th>
+            <td><input type="text" name="short_description" id="short_description" class="regular-text" value="{{ short_description }}"></td>
+        </tr>
+        <tr>
+            <th><label for="description">Description</label></th>
+            <td><textarea name="description" id="description" rows="6" class="large-text">{{ description }}</textarea></td>
+        </tr>
+        <tr>
+            <th><label for="regular_price">Regular price</label></th>
+            <td><input type="text" name="regular_price" id="regular_price" value="{{ regular_price }}" placeholder="24.00"></td>
+        </tr>
+        <tr>
+            <th><label for="sale_price">Sale price</label></th>
+            <td>
+                <input type="text" name="sale_price" id="sale_price" value="{{ sale_price }}" placeholder="18.00">
+                <p class="description">Leave blank to charge the regular price.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="sku">SKU</label></th>
+            <td><input type="text" name="sku" id="sku" value="{{ sku }}"></td>
+        </tr>
+        <tr>
+            <th><label for="stock_quantity">Stock</label></th>
+            <td>
+                <input type="text" name="stock_quantity" id="stock_quantity" value="{{ stock_quantity }}">
+                <p class="description">Leave blank if you are not tracking stock.</p>
+            </td>
+        </tr>
+        <tr>
+            <th><label for="image_url">Picture</label></th>
+            <td>
+                <input type="text" name="image_url" id="image_url" class="regular-text" value="{{ image_url }}" placeholder="https://example.com/mug.jpg">
+                {% if image_url %}
+                <p><img src="{{ image_url }}" alt="" style="max-width:180px;height:auto;margin-top:8px;"></p>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <th><label for="status">Status</label></th>
+            <td>
+                <select name="status" id="status">
+                    <option value="publish" {% if status == "publish" %}selected{% endif %}>Published</option>
+                    <option value="draft" {% if status == "draft" %}selected{% endif %}>Draft</option>
+                </select>
+            </td>
+        </tr>
+    </table>
+    <p class="submit">
+        <button type="submit" class="button button-primary">Save product</button>
+        <a href="/wp-admin/edit.php?post_type=product" class="button">Back to products</a>
+        {% if slug %}
+        <a href="/shop/product/{{ post_id }}" target="_blank">View in shop</a>
+        {% endif %}
+    </p>
+</form>
+{% endblock %}

@@ -395,6 +395,14 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/wp-admin/profile-2fa",
             get(totp_setup_page).post(totp_setup_save),
         )
+        .route(
+            "/wp-admin/wc-product-new.php",
+            get(super::plugin_admin::wc_product_editor).post(super::plugin_admin::wc_product_save),
+        )
+        .route(
+            "/wp-admin/wc-product-edit.php",
+            get(super::plugin_admin::wc_product_editor).post(super::plugin_admin::wc_product_save),
+        )
         .route("/wp-admin/logout", get(logout))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -413,7 +421,11 @@ async fn login_page_redirect() -> Redirect {
     Redirect::permanent("/wp-login.php")
 }
 
-fn render_admin(state: &AppState, template: &str, context: &tera::Context) -> Html<String> {
+pub(crate) fn render_admin(
+    state: &AppState,
+    template: &str,
+    context: &tera::Context,
+) -> Html<String> {
     match state.admin_tera.render(template, context) {
         Ok(html) => Html(html),
         Err(e) => {
@@ -423,7 +435,7 @@ fn render_admin(state: &AppState, template: &str, context: &tera::Context) -> Ht
     }
 }
 
-async fn admin_context(state: &AppState, session: &Session) -> tera::Context {
+pub(crate) async fn admin_context(state: &AppState, session: &Session) -> tera::Context {
     let mut ctx = tera::Context::new();
     let site_name = state.options.get_blogname().await.unwrap_or_default();
     ctx.insert("site_name", &site_name);
@@ -459,6 +471,10 @@ async fn admin_context(state: &AppState, session: &Session) -> tera::Context {
         &can(&Capability::EditThemeOptions),
     );
     ctx.insert("can_activate_plugins", &can(&Capability::ActivatePlugins));
+    ctx.insert(
+        "can_manage_woocommerce",
+        &can(&Capability::ManageWooCommerce),
+    );
 
     // Generate nonces for common admin actions
     let user_id = session.user_id;
@@ -1971,19 +1987,10 @@ async fn user_new_save(
             // Store role in wp_capabilities format (WordPress PHP serialized)
             let caps_value = format!("a:1:{{s:{}:\"{}\";b:1;}}", role.len(), role);
             set_usermeta(&state.db, inserted.id, "wp_capabilities", &caps_value).await;
-            set_usermeta(
-                &state.db,
-                inserted.id,
-                "wp_user_level",
-                match role.as_str() {
-                    "administrator" => "10",
-                    "editor" => "7",
-                    "author" => "2",
-                    "contributor" => "1",
-                    _ => "0",
-                },
-            )
-            .await;
+            let level = oxidepress_auth::roles::Role::from_str(&role)
+                .map(|role| role.user_level())
+                .unwrap_or("0");
+            set_usermeta(&state.db, inserted.id, "wp_user_level", level).await;
 
             // Store first_name and last_name in usermeta
             if let Some(ref first) = form.first_name {
@@ -2222,19 +2229,10 @@ async fn user_edit_save(
     if let Some(ref role) = form.role {
         let caps_value = format!("a:1:{{s:{}:\"{}\";b:1;}}", role.len(), role);
         set_usermeta(&state.db, user_id, "wp_capabilities", &caps_value).await;
-        set_usermeta(
-            &state.db,
-            user_id,
-            "wp_user_level",
-            match role.as_str() {
-                "administrator" => "10",
-                "editor" => "7",
-                "author" => "2",
-                "contributor" => "1",
-                _ => "0",
-            },
-        )
-        .await;
+        let level = oxidepress_auth::roles::Role::from_str(role)
+            .map(|role| role.user_level())
+            .unwrap_or("0");
+        set_usermeta(&state.db, user_id, "wp_user_level", level).await;
     }
 
     // Reload the user for display

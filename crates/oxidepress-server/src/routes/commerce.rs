@@ -1,15 +1,20 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and sell published products from the database.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
-    extract::{Path, State},
-    http::StatusCode,
-    response::{Html, IntoResponse, Json},
+    extract::{Form, Path, State},
+    http::{header, HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Json, Redirect, Response},
     routing::{get, post},
     Router,
 };
+use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Set};
 use serde::Deserialize;
 use std::sync::Arc;
+
+use oxidepress_commerce::woo_compat::{self, WooOrderData};
+use oxidepress_db::entities::wp_posts;
+use oxidepress_db::queries;
 
 use crate::state::AppState;
 
@@ -31,11 +36,134 @@ pub struct CheckoutFormData {
     pub payment_method: String,
 }
 
+#[derive(Deserialize)]
+struct CartForm {
+    product_id: u64,
+    quantity: Option<u32>,
+}
+
+const CART_COOKIE: &str = "oxidepress_cart";
+
+fn read_cookie(headers: &HeaderMap, name: &str) -> Option<String> {
+    let raw = headers.get(header::COOKIE)?.to_str().ok()?;
+    let prefix = format!("{name}=");
+    raw.split(';').find_map(|part| {
+        let part = part.trim();
+        part.strip_prefix(&prefix)
+            .filter(|value| !value.is_empty())
+            .map(|value| value.to_string())
+    })
+}
+
+fn cart_identity(headers: &HeaderMap) -> (String, bool) {
+    if let Some(id) = read_cookie(headers, CART_COOKIE) {
+        return (id, false);
+    }
+    (uuid::Uuid::new_v4().simple().to_string(), true)
+}
+
+fn set_cart_cookie(response: &mut Response, id: &str) {
+    let value = format!("{CART_COOKIE}={id}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000");
+    if let Ok(value) = header::HeaderValue::from_str(&value) {
+        response.headers_mut().insert(header::SET_COOKIE, value);
+    }
+}
+
+fn esc(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+fn shop_document(title: &str, body: &str) -> String {
+    format!(
+        r#"<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{title} – OxidePress</title>
+<style>
+body {{ font-family: Georgia, serif; margin: 0; color: #1d2327; background: #f6f7f7; }}
+header, main, footer {{ max-width: 960px; margin: 0 auto; padding: 1.25rem; }}
+header {{ display: flex; justify-content: space-between; align-items: center; background: #fff; }}
+nav a {{ margin-left: 1rem; color: #1d2327; }}
+.products {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }}
+.product, .single-product {{ background: #fff; padding: 1rem; border: 1px solid #dcdcde; }}
+.product img, .single-product img {{ width: 100%; height: 180px; object-fit: cover; background: #f0f0f1; }}
+.price {{ font-size: 1.2rem; }}
+.price del {{ color: #646970; margin-right: 0.4rem; }}
+button, .button {{ background: #2271b1; color: #fff; border: 0; padding: 0.6rem 1rem; cursor: pointer; text-decoration: none; display: inline-block; }}
+table {{ width: 100%; border-collapse: collapse; background: #fff; }}
+th, td {{ padding: 0.6rem; border-bottom: 1px solid #dcdcde; text-align: left; }}
+</style>
+</head>
+<body>
+<header>
+  <strong><a href="/">OxidePress</a></strong>
+  <nav>
+    <a href="/shop">Shop</a>
+    <a href="/about/">About</a>
+    <a href="/shipping/">Shipping</a>
+    <a href="/cart">Cart</a>
+  </nav>
+</header>
+<main>{body}</main>
+</body>
+</html>"#
+    )
+}
+
+async fn published_products(state: &AppState) -> Vec<woo_compat::WooProductData> {
+    let posts = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq(woo_compat::post_types::PRODUCT))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .order_by_desc(wp_posts::Column::PostDate)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let mut products = Vec::new();
+    for post in posts {
+        let meta = queries::get_post_meta_map(&state.db, post.id)
+            .await
+            .unwrap_or_default();
+        products.push(woo_compat::WooProductData::from_post_and_meta(
+            post.id,
+            &post.post_title,
+            &post.post_name,
+            &post.post_content,
+            &post.post_excerpt,
+            &meta,
+        ));
+    }
+    products
+}
+
+fn price_html(product: &woo_compat::WooProductData) -> String {
+    match product.sale_price {
+        Some(sale) if sale > 0.0 && sale < product.regular_price => format!(
+            r#"<p class="price"><del>${:.2}</del><ins>${:.2}</ins></p>"#,
+            product.regular_price, sale
+        ),
+        _ => format!(r#"<p class="price">${:.2}</p>"#, product.price),
+    }
+}
+
+fn picture_html(product: &woo_compat::WooProductData) -> String {
+    if woo_compat::image_url_is_safe(&product.image_url) && !product.image_url.is_empty() {
+        format!(r#"<img src="{}" alt="">"#, esc(&product.image_url))
+    } else {
+        String::new()
+    }
+}
+
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/shop", get(shop_page))
         .route("/shop/product/{id}", get(product_page))
         .route("/cart", get(cart_page))
+        .route("/cart/add", post(cart_add_form))
         .route("/checkout", get(checkout_page))
         .route("/checkout/thank-you/{order_id}", get(thank_you_page))
         .route("/api/cart/add", post(cart_add))
@@ -50,83 +178,164 @@ pub fn routes(state: Arc<AppState>) -> Router {
 }
 
 async fn shop_page(State(state): State<Arc<AppState>>) -> Html<String> {
-    let catalog = state.product_catalog.read().await;
-    let products = catalog.list_products();
-    let mut html = String::from("<h1>Shop</h1><div class=\"products\">");
-    for product in products {
-        html.push_str(&format!(
-            r#"<div class="product"><h2><a href="/shop/product/{}">{}</a></h2><p class="price">${:.2}</p><p>{}</p></div>"#,
-            product.id, product.name, product.price, product.short_description
-        ));
+    let products = published_products(&state).await;
+    let mut body = String::from("<h1>Shop</h1>");
+    if products.is_empty() {
+        body.push_str("<p>No products are published yet.</p>");
+    } else {
+        body.push_str(r#"<div class="products">"#);
+        for product in products {
+            body.push_str(&format!(
+                r#"<article class="product">{picture}<h2><a href="/shop/product/{id}">{name}</a></h2>{price}<p>{summary}</p></article>"#,
+                picture = picture_html(&product),
+                id = product.post_id,
+                name = esc(&product.name),
+                price = price_html(&product),
+                summary = esc(&product.short_description),
+            ));
+        }
+        body.push_str("</div>");
     }
-    html.push_str("</div>");
-    Html(html)
+    Html(shop_document("Shop", &body))
 }
 
 async fn product_page(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u64>,
 ) -> Result<Html<String>, StatusCode> {
-    let catalog = state.product_catalog.read().await;
-    let product = catalog.get_product(id).ok_or(StatusCode::NOT_FOUND)?;
-    let html = format!(
-        r#"<div class="single-product"><h1>{}</h1><p class="price">${:.2}</p><div class="description">{}</div><button onclick="fetch('/api/cart/add', {{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{product_id:{},quantity:1}})}})">Add to Cart</button></div>"#,
-        product.name, product.price, product.description, product.id
+    let product = published_products(&state)
+        .await
+        .into_iter()
+        .find(|product| product.post_id == id)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    let body = format!(
+        r#"<article class="single-product">{picture}<h1>{name}</h1>{price}<div class="description">{description}</div>
+<form method="post" action="/cart/add">
+  <input type="hidden" name="product_id" value="{id}">
+  <label>Quantity <input type="number" name="quantity" value="1" min="1" style="width:4rem"></label>
+  <button type="submit">Add to cart</button>
+</form>
+<p><a href="/shop">Back to the shop</a></p>
+</article>"#,
+        picture = picture_html(&product),
+        name = esc(&product.name),
+        price = price_html(&product),
+        description = esc(&product.description),
+        id = product.post_id,
     );
-    Ok(Html(html))
+    Ok(Html(shop_document(&product.name, &body)))
 }
 
-async fn cart_page(State(_state): State<Arc<AppState>>) -> Html<String> {
-    Html("<h1>Shopping Cart</h1><div id=\"cart-items\"></div><script>fetch('/api/cart').then(r=>r.json()).then(d=>document.getElementById('cart-items').innerHTML=JSON.stringify(d))</script>".to_string())
+async fn add_product_to_cart(state: &AppState, key: &str, product_id: u64, quantity: u32) -> bool {
+    let product = published_products(state)
+        .await
+        .into_iter()
+        .find(|product| product.post_id == product_id);
+    let Some(product) = product else {
+        return false;
+    };
+    let mut cart_mgr = state.cart_manager.write().await;
+    let cart = cart_mgr.get_or_create_cart(key);
+    cart.add_item(oxidepress_commerce::CartItem {
+        product_id,
+        name: product.name.clone(),
+        price: product.price,
+        quantity,
+        variation_id: None,
+    });
+    true
+}
+
+async fn cart_add_form(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    Form(form): Form<CartForm>,
+) -> Response {
+    let (key, is_new) = cart_identity(&headers);
+    let quantity = form.quantity.unwrap_or(1).max(1);
+    let found = add_product_to_cart(&state, &key, form.product_id, quantity).await;
+    let target = if found { "/cart" } else { "/shop" };
+    let mut response = Redirect::to(target).into_response();
+    if is_new {
+        set_cart_cookie(&mut response, &key);
+    }
+    response
+}
+
+async fn cart_page(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Html<String> {
+    let (key, _) = cart_identity(&headers);
+    let cart_mgr = state.cart_manager.read().await;
+    let body = if let Some(cart) = cart_mgr
+        .get_cart(&key)
+        .filter(|cart| !cart.items.is_empty())
+    {
+        let mut rows = String::new();
+        for item in &cart.items {
+            rows.push_str(&format!(
+                "<tr><td>{}</td><td>{}</td><td>${:.2}</td><td>${:.2}</td></tr>",
+                esc(&item.name),
+                item.quantity,
+                item.price,
+                item.price * item.quantity as f64
+            ));
+        }
+        format!(
+            r#"<h1>Cart</h1>
+<table><thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead><tbody>{rows}</tbody>
+<tfoot><tr><td colspan="3">Total</td><td>${total:.2}</td></tr></tfoot></table>
+<p><a class="button" href="/checkout">Checkout</a></p>"#,
+            total = cart.get_total()
+        )
+    } else {
+        r#"<h1>Cart</h1><p>Your cart is empty.</p><p><a href="/shop">Continue shopping</a></p>"#
+            .to_string()
+    };
+    Html(shop_document("Cart", &body))
 }
 
 async fn cart_add(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(req): Json<AddToCartRequest>,
-) -> impl IntoResponse {
-    let quantity = req.quantity.unwrap_or(1);
-    let catalog = state.product_catalog.read().await;
-    if let Some(product) = catalog.get_product(req.product_id) {
-        let session_id = "default_session";
-        let mut cart_mgr = state.cart_manager.write().await;
-        let cart = cart_mgr.get_or_create_cart(session_id);
-        cart.add_item(oxidepress_commerce::CartItem {
-            product_id: req.product_id,
-            name: product.name.clone(),
-            price: product.price,
-            quantity,
-            variation_id: None,
-        });
+) -> Response {
+    let (key, is_new) = cart_identity(&headers);
+    let quantity = req.quantity.unwrap_or(1).max(1);
+    let found = add_product_to_cart(&state, &key, req.product_id, quantity).await;
+    let (status, body) = if found {
         (
             StatusCode::OK,
-            Json(
-                serde_json::json!({"status": "added", "product_id": req.product_id, "quantity": quantity}),
-            ),
+            serde_json::json!({"status": "added", "product_id": req.product_id, "quantity": quantity}),
         )
     } else {
         (
             StatusCode::NOT_FOUND,
-            Json(serde_json::json!({"error": "Product not found"})),
+            serde_json::json!({"error": "Product not found"}),
         )
+    };
+    let mut response = (status, Json(body)).into_response();
+    if is_new {
+        set_cart_cookie(&mut response, &key);
     }
+    response
 }
 
 async fn cart_remove(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Path(product_id): Path<u64>,
 ) -> impl IntoResponse {
-    let session_id = "default_session";
+    let (key, _) = cart_identity(&headers);
     let mut cart_mgr = state.cart_manager.write().await;
-    if let Some(cart) = cart_mgr.get_cart_mut(session_id) {
+    if let Some(cart) = cart_mgr.get_cart_mut(&key) {
         cart.remove_item(product_id, None);
     }
     Json(serde_json::json!({"status": "removed", "product_id": product_id}))
 }
 
-async fn cart_get(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let session_id = "default_session";
+async fn cart_get(State(state): State<Arc<AppState>>, headers: HeaderMap) -> impl IntoResponse {
+    let (key, _) = cart_identity(&headers);
     let cart_mgr = state.cart_manager.read().await;
-    if let Some(cart) = cart_mgr.get_cart(session_id) {
+    if let Some(cart) = cart_mgr.get_cart(&key) {
         Json(serde_json::json!({
             "items": cart.items,
             "total": cart.get_total()
@@ -137,8 +346,7 @@ async fn cart_get(State(state): State<Arc<AppState>>) -> impl IntoResponse {
 }
 
 async fn products_list(State(state): State<Arc<AppState>>) -> impl IntoResponse {
-    let catalog = state.product_catalog.read().await;
-    let products: Vec<_> = catalog.list_products().into_iter().cloned().collect();
+    let products = published_products(&state).await;
     Json(serde_json::json!(products))
 }
 
@@ -146,21 +354,27 @@ async fn product_detail(
     State(state): State<Arc<AppState>>,
     Path(id): Path<u64>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let catalog = state.product_catalog.read().await;
-    let product = catalog.get_product(id).ok_or(StatusCode::NOT_FOUND)?;
+    let product = published_products(&state)
+        .await
+        .into_iter()
+        .find(|product| product.post_id == id)
+        .ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(serde_json::json!(product)))
 }
 
-async fn checkout_page(State(state): State<Arc<AppState>>) -> Html<String> {
-    let session_id = "default_session";
+async fn checkout_page(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Html<String> {
+    let (key, _) = cart_identity(&headers);
     let cart_mgr = state.cart_manager.read().await;
-    let (items_html, total) = if let Some(cart) = cart_mgr.get_cart(session_id) {
+    let (items_html, total) = if let Some(cart) = cart_mgr.get_cart(&key) {
         let mut html = String::new();
         for item in &cart.items {
             let line_total = item.price * item.quantity as f64;
             html.push_str(&format!(
                 r#"<tr><td>{}</td><td>{}</td><td>${:.2}</td><td>${:.2}</td></tr>"#,
-                item.name, item.quantity, item.price, line_total
+                esc(&item.name),
+                item.quantity,
+                item.price,
+                line_total
             ));
         }
         (html, cart.get_total())
@@ -263,13 +477,14 @@ document.getElementById('checkout-form').addEventListener('submit', function(e) 
 
 async fn checkout_submit(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Json(form): Json<CheckoutFormData>,
 ) -> impl IntoResponse {
-    let session_id = "default_session";
+    let (session_id, _) = cart_identity(&headers);
 
     // Read cart items
     let cart_mgr = state.cart_manager.read().await;
-    let cart = match cart_mgr.get_cart(session_id) {
+    let cart = match cart_mgr.get_cart(&session_id) {
         Some(c) if !c.items.is_empty() => c.clone(),
         _ => {
             return (
@@ -321,7 +536,7 @@ async fn checkout_submit(
     let order_id = order_mgr.create_order(
         order_items,
         billing.clone(),
-        billing, // use billing as shipping for simplicity
+        billing.clone(),
         &form.payment_method,
         0.0, // shipping_total
         0.0, // tax_total
@@ -338,9 +553,54 @@ async fn checkout_submit(
     order_mgr.update_status(order_id, oxidepress_commerce::OrderStatus::Processing);
     drop(order_mgr);
 
+    let stored = WooOrderData {
+        order_key: format!("wc_order_{order_id}"),
+        status: "wc-processing".to_string(),
+        currency: "USD".to_string(),
+        total,
+        payment_method: form.payment_method.clone(),
+        payment_method_title: form.payment_method.clone(),
+        billing: billing.clone(),
+        shipping: billing.clone(),
+        ..WooOrderData::default()
+    };
+    let now = chrono::Utc::now().naive_utc();
+    let order_post = wp_posts::ActiveModel {
+        post_author: Set(0),
+        post_date: Set(now),
+        post_date_gmt: Set(now),
+        post_content: Set(String::new()),
+        post_title: Set(format!("Order {order_id}")),
+        post_excerpt: Set(String::new()),
+        post_status: Set("wc-processing".to_string()),
+        comment_status: Set("closed".to_string()),
+        ping_status: Set("closed".to_string()),
+        post_password: Set(String::new()),
+        post_name: Set(format!("order-{order_id}")),
+        to_ping: Set(String::new()),
+        pinged: Set(String::new()),
+        post_modified: Set(now),
+        post_modified_gmt: Set(now),
+        post_content_filtered: Set(String::new()),
+        post_parent: Set(0),
+        guid: Set(String::new()),
+        menu_order: Set(0),
+        post_type: Set(woo_compat::post_types::ORDER.to_string()),
+        post_mime_type: Set(String::new()),
+        comment_count: Set(0),
+        ..Default::default()
+    };
+    if let Ok(inserted) = order_post.insert(&state.db).await {
+        if let Err(error) =
+            queries::set_post_meta_bulk(&state.db, inserted.id, &stored.to_meta()).await
+        {
+            tracing::error!(%error, "shop order meta was not saved");
+        }
+    }
+
     // Clear the cart
     let mut cart_mgr = state.cart_manager.write().await;
-    if let Some(cart) = cart_mgr.get_cart_mut(session_id) {
+    if let Some(cart) = cart_mgr.get_cart_mut(&session_id) {
         cart.clear();
     }
 

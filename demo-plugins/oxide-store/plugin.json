@@ -1,0 +1,7 @@
+{
+  "name": "oxide-store",
+  "version": "1.0.0",
+  "description": "Basic shop: products, prices, pictures, cart, and checkout.",
+  "author": "OxidePress",
+  "plugin_type": "Native"
+}

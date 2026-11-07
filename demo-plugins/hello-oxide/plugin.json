@@ -1,0 +1,7 @@
+{
+  "name": "hello-oxide",
+  "version": "1.0.0",
+  "description": "Welcome note for the local OxidePress site.",
+  "author": "OxidePress",
+  "plugin_type": "Native"
+}

@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to add the shop manager role.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -6,6 +9,7 @@ use std::collections::HashSet;
 #[serde(rename_all = "snake_case")]
 pub enum Role {
     Administrator,
+    ShopManager,
     Editor,
     Author,
     Contributor,
@@ -62,6 +66,8 @@ pub enum Capability {
 
     // Site capabilities
     ManageOptions,
+    /// Products, orders, and the store catalog. Shop managers have this; they do not run the site.
+    ManageWooCommerce,
     ManageLinks,
     ManageCategories,
     ModerateComments,
@@ -76,6 +82,7 @@ impl Role {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Administrator => "administrator",
+            Self::ShopManager => "shop_manager",
             Self::Editor => "editor",
             Self::Author => "author",
             Self::Contributor => "contributor",
@@ -88,6 +95,7 @@ impl Role {
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "administrator" => Some(Self::Administrator),
+            "shop_manager" => Some(Self::ShopManager),
             "editor" => Some(Self::Editor),
             "author" => Some(Self::Author),
             "contributor" => Some(Self::Contributor),
@@ -136,6 +144,7 @@ impl Role {
                 InstallPlugins,
                 DeletePlugins,
                 ManageOptions,
+                ManageWooCommerce,
                 ManageLinks,
                 ManageCategories,
                 ModerateComments,
@@ -143,6 +152,24 @@ impl Role {
                 Import,
                 Export,
                 Unfiltered,
+                Read,
+            ]),
+            Role::ShopManager => HashSet::from([
+                EditPosts,
+                EditOthersPosts,
+                EditPublishedPosts,
+                PublishPosts,
+                DeletePosts,
+                DeleteOthersPosts,
+                DeletePublishedPosts,
+                EditPages,
+                EditPublishedPages,
+                PublishPages,
+                DeletePages,
+                ManageCategories,
+                ModerateComments,
+                UploadFiles,
+                ManageWooCommerce,
                 Read,
             ]),
             Role::Editor => HashSet::from([
@@ -190,6 +217,18 @@ impl Role {
     /// Check if this role has a specific capability.
     pub fn can(&self, capability: &Capability) -> bool {
         self.capabilities().contains(capability)
+    }
+
+    /// WordPress `wp_user_level` for this role. Shop managers sit under administrators.
+    pub fn user_level(&self) -> &'static str {
+        match self {
+            Self::Administrator => "10",
+            Self::ShopManager => "8",
+            Self::Editor => "7",
+            Self::Author => "2",
+            Self::Contributor => "1",
+            Self::Subscriber => "0",
+        }
     }
 }
 
@@ -270,6 +309,7 @@ mod tests {
     fn test_as_str_round_trips() {
         for role in [
             Role::Administrator,
+            Role::ShopManager,
             Role::Editor,
             Role::Author,
             Role::Contributor,
@@ -281,6 +321,20 @@ mod tests {
     }
 
     // --- Administrator capabilities ---
+
+    #[test]
+    fn test_shop_manager_runs_the_store_only() {
+        let manager = Role::ShopManager;
+        assert!(manager.can(&Capability::ManageWooCommerce));
+        assert!(manager.can(&Capability::EditOthersPosts));
+        assert!(manager.can(&Capability::UploadFiles));
+        assert!(!manager.can(&Capability::ManageOptions));
+        assert!(!manager.can(&Capability::ActivatePlugins));
+        assert!(!manager.can(&Capability::ListUsers));
+        assert!(Role::Administrator.can(&Capability::ManageWooCommerce));
+        assert_eq!(manager.user_level(), "8");
+        assert_eq!(Role::from_str("shop_manager"), Some(Role::ShopManager));
+    }
 
     #[test]
     fn test_admin_can_manage_options() {

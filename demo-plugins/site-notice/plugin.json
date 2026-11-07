@@ -1,0 +1,7 @@
+{
+  "name": "site-notice",
+  "version": "1.0.0",
+  "description": "Shows a short notice in the local site footer.",
+  "author": "OxidePress",
+  "plugin_type": "Native"
+}
