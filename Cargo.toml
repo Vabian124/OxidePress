@@ -37,7 +37,7 @@ authors = ["Vabian124"]
 description = "OxidePress - a WordPress-compatible CMS built in Rust. Independent fork of RustPress."
 
 [workspace.metadata.wp-compat]
-wordpress-db-schema = "6.9"
+wordpress-db-schema = "7.1.4"
 target-compat = "full"
 phase = "8"
 

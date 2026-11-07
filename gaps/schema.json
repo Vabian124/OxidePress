@@ -1,0 +1,46 @@
+{
+  "pin": "7.1.4",
+  "wordpress_version": "7.1.4",
+  "wordpress_db_version": 61833,
+  "oxidepress_db_version": 61833,
+  "coverage": "Single-site CREATE TABLE statements. Integer defaults are compared numerically. The second wp_users definition is the multisite variant and is not required for a single-site install. SeaORM entities and PHP behavior are outside this report.",
+  "sources": {
+    "wordpress_schema": "https://raw.githubusercontent.com/WordPress/WordPress/7.1.4/wp-admin/includes/schema.php",
+    "wordpress_version": "https://raw.githubusercontent.com/WordPress/WordPress/7.1.4/wp-includes/version.php",
+    "oxidepress": "crates/oxidepress-migrate/src/lib.rs"
+  },
+  "missing_tables": [],
+  "multisite_tables_not_in_single_site_migrator": [
+    "wp_blogmeta",
+    "wp_blogs",
+    "wp_registration_log",
+    "wp_signups",
+    "wp_site",
+    "wp_sitemeta"
+  ],
+  "multisite_variants": [
+    {
+      "table": "wp_users",
+      "extra_columns": [
+        "deleted",
+        "spam"
+      ]
+    }
+  ],
+  "extra_tables": [],
+  "clean_tables": [
+    "wp_commentmeta",
+    "wp_comments",
+    "wp_links",
+    "wp_options",
+    "wp_postmeta",
+    "wp_posts",
+    "wp_term_relationships",
+    "wp_term_taxonomy",
+    "wp_termmeta",
+    "wp_terms",
+    "wp_usermeta",
+    "wp_users"
+  ],
+  "tables": []
+}

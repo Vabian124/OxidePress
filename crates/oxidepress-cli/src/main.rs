@@ -1749,10 +1749,12 @@ async fn migrate_analyze_db(db_url: &str) -> Result<(String, i64, i64, i64, Stri
         .unwrap_or_default();
     let version_str = if wp_version_display.is_empty() {
         // Map db_version to approximate WP version
-        match wp_version.as_str() {
-            v if v.parse::<u64>().unwrap_or(0) >= 58975 => "6.9+".to_string(),
-            v if v.parse::<u64>().unwrap_or(0) >= 57155 => "6.x".to_string(),
-            v if v.parse::<u64>().unwrap_or(0) >= 49752 => "5.x".to_string(),
+        match wp_version.parse::<u64>().unwrap_or(0) {
+            v if v >= 61833 => "7.1+".to_string(),
+            v if v >= 60717 => "6.9+".to_string(),
+            v if v >= 58975 => "6.7+".to_string(),
+            v if v >= 57155 => "6.x".to_string(),
+            v if v >= 49752 => "5.x".to_string(),
             _ => format!("unknown (db_version: {wp_version})"),
         }
     } else {
@@ -1884,7 +1886,11 @@ fn migrate_parse_db_version(version_str: &str) -> Result<u64> {
     }
     // Map human-readable "6.x" / "5.x" etc. to approximate db_version thresholds
     let lower = version_str.to_lowercase();
-    if lower.starts_with("6.9") {
+    if lower.starts_with("7.1") {
+        Ok(61833)
+    } else if lower.starts_with("6.9") {
+        Ok(60717)
+    } else if lower.starts_with("6.7") || lower.starts_with("6.8") {
         Ok(58975)
     } else if lower.starts_with("6.") {
         Ok(57155)
@@ -2119,7 +2125,12 @@ mod tests {
 
     #[test]
     fn test_parse_db_version_6_9_maps_to_threshold() {
-        assert_eq!(migrate_parse_db_version("6.9").unwrap(), 58975);
+        assert_eq!(migrate_parse_db_version("6.9").unwrap(), 60717);
+    }
+
+    #[test]
+    fn test_parse_db_version_7_1_maps_to_threshold() {
+        assert_eq!(migrate_parse_db_version("7.1").unwrap(), 61833);
     }
 
     #[test]

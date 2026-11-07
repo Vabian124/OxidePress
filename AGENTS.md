@@ -26,6 +26,20 @@ cargo test --workspace --lib --bins -- --skip e2e
 cargo fmt --all -- --check
 ```
 
+## Schema gap
+
+WordPress compatibility is a diff, not a reread. Regenerate it with:
+
+```powershell
+pwsh -File tools/wp-gap.ps1
+```
+
+The report is `gaps/schema.json`. It compares the pinned WordPress `schema.php` with `crates/oxidepress-migrate`. Edit that crate from a row in the report. Do not open WordPress source to rediscover the list.
+
+## Do not read
+
+`MASTERPLAN.md` and `docs/instructions/` are upstream planning notes. They are not the task list.
+
 ## Do not change
 
 - `LICENSE`, `themes/`, `static/`, `wp-content/`, and the upstream credit in `AUTHORS`.
@@ -33,7 +47,7 @@ cargo fmt --all -- --check
 - Tables `rustpress_sessions`, `rustpress_cache`, `rustpress_migrations`.
 - Template key `rustpress_version` (themes still read it).
 - Env vars `RUSTPRESS_HOST`, `RUSTPRESS_PORT`, `RUSTPRESS_URL`, `RUSTPRESS_UPLOAD_DIR`.
-- WordPress tables (`wp_posts`, `wp_options`, and the rest) and password hashes.
+- WordPress table names (`wp_posts`, `wp_options`, and the rest) and password hashes. Schema changes belong in `oxidepress-migrate` and have to match a row in `gaps/schema.json`.
 
 `tools/rename.ps1` is the rebrand codemod. Dry-run is the default. It is not a general editor.
 

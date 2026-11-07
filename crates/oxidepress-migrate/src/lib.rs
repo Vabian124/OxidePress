@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and align the single-site schema with WordPress 7.1.4.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 pub mod analyze;
@@ -12,7 +12,8 @@ use tracing::info;
 /// Handles creating the WordPress-compatible database schema
 /// and running migrations for OxidePress-specific extensions.
 /// Create all WordPress core tables if they don't exist.
-/// Compatible with WordPress 6.9 database schema.
+/// Compatible with the WordPress 7.1.4 single-site schema (db_version 61833).
+/// Multisite global tables are not created here.
 pub async fn create_wp_tables(db: &DatabaseConnection) -> Result<(), DbErr> {
     let tables = vec![
         create_posts_table(),
@@ -61,7 +62,7 @@ pub async fn insert_default_options(
         ("timezone_string", "UTC"),
         ("template", "twentyrust"),
         ("stylesheet", "twentyrust"),
-        ("db_version", "58975"),
+        ("db_version", "61833"),
     ];
 
     for (name, value) in defaults {
@@ -123,7 +124,8 @@ fn create_posts_table() -> (&'static str, String) {
         KEY post_name (post_name(191)),
         KEY type_status_date (post_type, post_status, post_date, ID),
         KEY post_parent (post_parent),
-        KEY post_author (post_author)
+        KEY post_author (post_author),
+        KEY type_status_author (post_type, post_status, post_author)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_520_ci"
             .to_string(),
     )
@@ -206,7 +208,7 @@ fn create_comments_table() -> (&'static str, String) {
         "CREATE TABLE IF NOT EXISTS wp_comments (
         comment_ID bigint(20) unsigned NOT NULL AUTO_INCREMENT,
         comment_post_ID bigint(20) unsigned NOT NULL DEFAULT 0,
-        comment_author text NOT NULL,
+        comment_author tinytext NOT NULL,
         comment_author_email varchar(100) NOT NULL DEFAULT '',
         comment_author_url varchar(200) NOT NULL DEFAULT '',
         comment_author_IP varchar(100) NOT NULL DEFAULT '',
