@@ -12,7 +12,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - All 115 core block names from WordPress 7.1.4 are present in the renderer and the REST catalog. `missing_from_renderer` and `missing_from_rest` are empty. `core/query-loop`, `core/row`, and `core/stack` are OxidePress aliases.
 - The local site boots on MySQL 8, serves Twenty Twenty-Five, and the shop, cart, and checkout use that theme. Footer labels that were `href="#"` resolve to published pages.
 - SEO, custom fields, contact forms, and security screens render and store their rows. A shop manager can edit a product and cannot open plugins.
-- The public home page uses a saved `_yoast_wpseo_title-homepage` and `_yoast_wpseo_metadesc-homepage`. The header site name stays the blog name.
+- The public home page reads `wpseo_titles` (`title-home-wpseo` and `metadesc-home-wpseo`). The first import copies a saved `_yoast_wpseo_title-homepage` and `_yoast_wpseo_metadesc-homepage` into those keys. Posts, search, date archives, and the 404 use the official templates and separator. The header site name stays the blog name. `/sitemap_index.xml` lists the post and page sitemaps, and `robots.txt` points at that index.
 - `core/query` repeats its template for the published posts on the render context. Page lists, breadcrumbs, and post navigation use the pages and permalinks on that context.
 - The SEO sitemap checkboxes are stored and `/sitemap.xml` follows them.
 - A field group whose location is `product` or `all` shows on the product editor and saves as post meta.
@@ -41,7 +41,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - The comments screen names the post a comment belongs to. The All count stays the full total when another status is selected.
 - `/comments/feed/` names the post and links to that post’s permalink with the comment anchor. A recent-comments widget uses the same permalink.
 - Approving, holding, spamming, trashing, or deleting a comment rewrites the post’s stored comment count to the approved rows.
-- `/shop/`, `/cart/`, `/checkout/`, and `/shop/product/{id}/` serve the same pages as the links without a trailing slash.
+- `/shop/`, `/cart/`, `/checkout/`, and `/shop/product/{id}/` serve the same pages as the links without a trailing slash. `/product/{slug}/` is the product permalink. It shows the stored sale price, SKU, and stock, and Add to cart puts that product in the cart.
 
 ## Next, in order
 
