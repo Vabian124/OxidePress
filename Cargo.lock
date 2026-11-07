@@ -2865,6 +2865,7 @@ dependencies = [
  "oxidepress-auth",
  "oxidepress-core",
  "oxidepress-db",
+ "oxidepress-plugins",
  "oxidepress-query",
  "oxidepress-themes",
  "sea-orm",
