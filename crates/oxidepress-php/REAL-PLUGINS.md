@@ -25,7 +25,7 @@ The probe includes each plugin, attaches its registrations, then fires `plugins_
 
 ## After the boot helpers
 
-The worker now provides the path, URL, locale, translation, query-arg, transient, and widget helpers those plugins call while booting. `wp_enqueue_script` / `wp_enqueue_style` and `register_setting` are accepted and do not yet print assets or draw a settings screen.
+The worker now provides the path, URL, locale, translation, query-arg, transient, and widget helpers those plugins call while booting, plus `register_post_type` (returns a `WP_Post_Type`), `add_submenu_page` and the other `add_*_page` menu helpers, upload-directory helpers (`wp_upload_dir`, `wp_get_upload_dir`, `wp_mkdir_p`, `wp_is_writable`, `wp_normalize_path`), and a small nonce/`get_bloginfo` surface. `wp_enqueue_script` / `wp_enqueue_style` and `register_setting` are accepted and do not yet print assets or draw a settings screen. `current_user_can()` returns false.
 
 | Plugin | Version | Result |
 | --- | --- | --- |
@@ -35,11 +35,11 @@ The worker now provides the path, URL, locale, translation, query-arg, transient
 | Disable Comments | 2.9.1 | Loaded (15 actions, 1 filter). Every probed hook returned. |
 | Yoast Duplicate Post | 4.7 | Loaded (1 action, 1 filter). Every probed hook returned. Admin screens stay unloaded because `is_admin()` is false. |
 | Hello Dolly | 1.7.2 | Loaded. `admin_notices` echoed the lyric paragraph (`<p id="dolly">…Quote from Hello Dolly song…`). `admin_head` echoed the `#dolly` stylesheet (354 bytes). |
-| Contact Form 7 | 6.2.4.1 | Loaded (18 actions, 8 filters). Stopped inside `plugins_loaded` on `register_post_type()`. |
-| Health Check | 1.7.1 | Loaded (4 actions, 1 filter). Its `compat.php` warns because it `include`s `ABSPATH . 'wp-includes/version.php'`, and this process is not a WordPress tree. Stopped on `admin_init` at `add_submenu_page()`. |
+| Health Check | 1.7.1 | Loaded (4 actions, 1 filter). Every probed hook returned, including `admin_menu`. Its `compat.php` still warns because it `include`s `ABSPATH . 'wp-includes/version.php'`, and this process is not a WordPress tree. |
+| Contact Form 7 | 6.2.4.1 | Loaded (18 actions, 8 filters). `register_post_type()` and the upload-directory helpers returned. Stopped inside `plugins_loaded` when `includes/filesystem.php` `require_once`s `ABSPATH . 'wp-admin/includes/file.php'` (and the `WP_Filesystem_*` classes next to it). That is WordPress core's filesystem API, which this worker does not ship. |
 
 ## What this does not mean
 
-The live OxidePress server still does not scan `wp-content/plugins` for `.php` files, and `wp_head` output from an action is not inserted into the theme yet. A plugin that boots here has registered its hooks. It has not gained post types, admin menus, or HTTP calls such as Akismet's spam API.
+The live OxidePress server still does not scan `wp-content/plugins` for `.php` files, and `wp_head` output from an action is not inserted into the theme yet. A plugin that boots here has registered its hooks. Post types and admin menu slugs are recorded in the worker only. HTTP calls such as Akismet's spam API, and the WordPress filesystem classes Contact Form 7 loads, are still absent.
 
-`fixtures/boot-surface` locks the helpers the passing plugins rely on: widget subclassing, `__return_false`, `plugins_url`, `path_join`, `get_user_locale`, `get_site_option`, `add_query_arg`, and an escaped `admin_notices` echo.
+`fixtures/boot-surface` locks the helpers the passing plugins rely on: widget subclassing, `__return_false`, `plugins_url`, `path_join`, `get_user_locale`, `get_site_option`, `add_query_arg`, `register_post_type('boot_form')`, `add_submenu_page`, and an escaped `admin_notices` echo.

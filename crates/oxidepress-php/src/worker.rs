@@ -925,6 +925,12 @@ mod tests {
             Some("http://localhost/notice?dolly=1")
         );
         assert_eq!(host.get_option("boot_has_notice").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("boot_type").as_deref(), Some("boot_form"));
+        assert_eq!(host.get_option("boot_type_exists").as_deref(), Some("yes"));
+        assert_eq!(
+            host.get_option("boot_menu").as_deref(),
+            Some("tools.php_page_boot-surface")
+        );
         assert_eq!(runtime.take_output("admin_notices"), "Hello Dolly");
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
     }

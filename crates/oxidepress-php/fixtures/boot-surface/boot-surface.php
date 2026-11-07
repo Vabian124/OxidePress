@@ -27,6 +27,13 @@ function boot_surface_init() {
     update_option('boot_site', get_site_option('missing_site_option', 'fallback'));
     update_option('boot_query', add_query_arg('dolly', '1', home_url('notice')));
     update_option('boot_has_notice', has_action('admin_notices') ? 'yes' : 'no');
+    $post_type = register_post_type('boot_form', array(
+        'public' => false,
+        'labels' => array('name' => 'Boot Forms'),
+    ));
+    update_option('boot_type', is_object($post_type) ? $post_type->name : '');
+    update_option('boot_type_exists', post_type_exists('boot_form') ? 'yes' : 'no');
+    update_option('boot_menu', add_submenu_page('tools.php', 'Boot', 'Boot', 'read', 'boot-surface', 'boot_surface_notice'));
 }
 
 function boot_surface_notice() {

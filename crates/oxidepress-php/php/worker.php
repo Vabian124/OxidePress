@@ -28,6 +28,8 @@ $oxidepress_request_id = 0;
 $oxidepress_plugin_file = '';
 $oxidepress_fatal_sent = false;
 $oxidepress_did = array();
+$oxidepress_post_types = array();
+$oxidepress_admin_menus = array();
 $GLOBALS['wp_version'] = '6.8.3';
 
 $oxidepress_plugins_dir = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
@@ -756,6 +758,283 @@ function esc_url_raw($url, $protocols = null)
 function sanitize_url($url, $protocols = null)
 {
     return esc_url_raw($url, $protocols);
+}
+
+function sanitize_key($key)
+{
+    $key = strtolower(oxidepress_text($key));
+    $key = preg_replace('/[^a-z0-9_\-]/', '', $key);
+    return $key === null ? '' : $key;
+}
+
+function absint($value)
+{
+    return abs((int)$value);
+}
+
+function wp_json_encode($data, $options = 0, $depth = 512)
+{
+    $encoded = json_encode($data, $options, $depth);
+    return $encoded === false ? false : $encoded;
+}
+
+function wp_create_nonce($action = -1)
+{
+    return substr(md5('oxidepress|' . oxidepress_text($action)), 0, 10);
+}
+
+function wp_verify_nonce($nonce, $action = -1)
+{
+    return hash_equals(wp_create_nonce($action), (string)$nonce) ? 1 : false;
+}
+
+function nocache_headers()
+{
+}
+
+function current_user_can($capability, ...$args)
+{
+    return false;
+}
+
+function wp_localize_script($handle, $object_name, $data)
+{
+    return true;
+}
+
+function wp_upload_dir($time = null, $create_dir = true, $refresh = false)
+{
+    $baseurl = site_url('wp-content/uploads');
+    $plugins = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
+    if ($plugins !== '') {
+        $basedir = rtrim(oxidepress_normalize_path(dirname($plugins)), '/') . '/uploads';
+    } else {
+        $basedir = rtrim(oxidepress_normalize_path(getcwd()), '/') . '/wp-content/uploads';
+    }
+    return array(
+        'path' => $basedir,
+        'url' => $baseurl,
+        'subdir' => '',
+        'basedir' => $basedir,
+        'baseurl' => $baseurl,
+        'error' => false,
+    );
+}
+
+function wp_get_upload_dir()
+{
+    return wp_upload_dir();
+}
+
+function wp_mkdir_p($target)
+{
+    $target = oxidepress_normalize_path($target);
+    if ($target === '' || $target === '.' || $target === '/') {
+        return false;
+    }
+    if (is_dir($target)) {
+        return true;
+    }
+    return mkdir($target, 0777, true);
+}
+
+function wp_is_writable($path)
+{
+    $path = oxidepress_normalize_path($path);
+    if ($path === '') {
+        return false;
+    }
+    if (file_exists($path)) {
+        return is_writable($path);
+    }
+    $parent = dirname($path);
+    return $parent !== '' && is_dir($parent) && is_writable($parent);
+}
+
+function wp_normalize_path($path)
+{
+    return oxidepress_normalize_path($path);
+}
+
+function get_bloginfo($show = '', $filter = 'raw')
+{
+    switch ((string)$show) {
+        case 'version':
+            return isset($GLOBALS['wp_version']) ? (string)$GLOBALS['wp_version'] : '';
+        case 'url':
+        case 'wpurl':
+        case 'home':
+            return site_url();
+        case 'name':
+            $name = get_option('blogname', 'OxidePress');
+            return $name === false ? 'OxidePress' : (string)$name;
+        case 'description':
+            $description = get_option('blogdescription', '');
+            return $description === false ? '' : (string)$description;
+        case 'charset':
+            return 'UTF-8';
+        case 'language':
+            return get_locale();
+        default:
+            return '';
+    }
+}
+
+function register_post_type($post_type, $args = array())
+{
+    global $oxidepress_post_types;
+
+    $post_type = sanitize_key($post_type);
+    if ($post_type === '') {
+        return new WP_Error('invalid_post_type', 'post type is empty');
+    }
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $object = new WP_Post_Type($post_type, $args);
+    $oxidepress_post_types[$post_type] = $object;
+    return $object;
+}
+
+function post_type_exists($post_type)
+{
+    global $oxidepress_post_types;
+    return isset($oxidepress_post_types[sanitize_key($post_type)]);
+}
+
+function add_menu_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $icon_url = '', $position = null)
+{
+    return oxidepress_add_menu('', $page_title, $menu_title, $capability, $menu_slug, $callback);
+}
+
+function add_submenu_page($parent_slug, $page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return oxidepress_add_menu($parent_slug, $page_title, $menu_title, $capability, $menu_slug, $callback);
+}
+
+function add_management_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('tools.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_options_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('options-general.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_plugins_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('plugins.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_theme_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('themes.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_users_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('users.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_dashboard_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('index.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_posts_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('edit.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_media_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('upload.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_pages_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('edit.php?post_type=page', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function add_comments_page($page_title, $menu_title, $capability, $menu_slug, $callback = '', $position = null)
+{
+    return add_submenu_page('edit-comments.php', $page_title, $menu_title, $capability, $menu_slug, $callback, $position);
+}
+
+function oxidepress_add_menu($parent_slug, $page_title, $menu_title, $capability, $menu_slug, $callback)
+{
+    global $oxidepress_admin_menus;
+
+    $parent = (string)$parent_slug;
+    $slug = (string)$menu_slug;
+    $hook = ($parent === '' ? 'toplevel_page_' : $parent . '_page_') . $slug;
+    $oxidepress_admin_menus[] = array(
+        'parent' => $parent,
+        'slug' => $slug,
+        'hook' => $hook,
+        'page_title' => oxidepress_text($page_title),
+        'menu_title' => oxidepress_text($menu_title),
+        'capability' => (string)$capability,
+    );
+    return $hook;
+}
+
+class WP_Post_Type
+{
+    public $name;
+    public $label;
+    public $labels;
+    public $public = false;
+    public $args = array();
+
+    public function __construct($name, $args)
+    {
+        $this->name = $name;
+        $this->args = $args;
+        $labels = isset($args['labels']) && is_array($args['labels']) ? $args['labels'] : array();
+        $this->labels = (object)$labels;
+        $this->label = isset($labels['name']) ? (string)$labels['name'] : $name;
+        $this->public = !empty($args['public']);
+    }
+}
+
+class WP_Error
+{
+    public $errors = array();
+    public $error_data = array();
+
+    public function __construct($code = '', $message = '', $data = '')
+    {
+        if ($code !== '') {
+            $this->errors[$code] = array((string)$message);
+            if ($data !== '') {
+                $this->error_data[$code] = $data;
+            }
+        }
+    }
+
+    public function get_error_message($code = '')
+    {
+        if ($code === '') {
+            $code = $this->get_error_code();
+        }
+        if (!isset($this->errors[$code][0])) {
+            return '';
+        }
+        return $this->errors[$code][0];
+    }
+
+    public function get_error_code()
+    {
+        $codes = array_keys($this->errors);
+        return isset($codes[0]) ? $codes[0] : '';
+    }
+}
+
+function is_wp_error($thing)
+{
+    return $thing instanceof WP_Error;
 }
 
 function sanitize_text_field($text)
