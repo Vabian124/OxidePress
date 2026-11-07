@@ -1,6 +1,6 @@
-# Contributing to RustPress
+# Contributing to OxidePress
 
-Thank you for your interest in contributing to RustPress! This project aims to build a 100% WordPress-compatible CMS in Rust, and every contribution helps us get closer to that goal.
+OxidePress is an independent GPL-2.0-only fork of RustPress by Ryuji Yasukochi. See [AUTHORS](AUTHORS). One task, one crate, one pull request. Find the crate with `pwsh -File tools/task.ps1 -Keyword <word>` and read [AGENTS.md](AGENTS.md) before editing.
 
 ## Getting Started
 
@@ -22,7 +22,7 @@ Thank you for your interest in contributing to RustPress! This project aims to b
 ```bash
 cp .env.example .env
 # Edit .env with your database credentials
-cargo run -p rustpress-server
+cargo run -p oxidepress-server
 ```
 
 ### Running E2E Tests
@@ -39,31 +39,11 @@ docker-compose up -d
 
 ## Workflow
 
-### For Team Members (#01-#09)
-
-Each team member works in a **separate clone** of the repository:
-
-```bash
-git clone https://github.com/LegacyToRustProject/RustPress.git ~/RustPress-<role>
-cd ~/RustPress-<role>
-git checkout -b feat/<feature-name>
-```
-
-**Rules:**
-
-1. **Never push directly to `main`.** All changes go through PRs.
-2. **Work on feature branches.** e.g., `feat/theme-compat`, `fix/logout-session`
-3. **PRs require two approvals:** QA review (#09) + project owner.
-4. **`main` must always be green.** CI (check, test, fmt, clippy) must pass.
-5. **Pull before you test.** Always `git pull origin main` to get the latest code.
-
-### For External Contributors
-
-1. Fork the repository
-2. Create a branch from `main`
-3. Make your changes
-4. Ensure CI checks pass (see below)
-5. Submit a pull request using the PR template
+1. Fork [Vabian124/OxidePress](https://github.com/Vabian124/OxidePress) and clone your fork.
+2. Create a branch from `main`. Name it `fix/<crate>-<thing>` or `feat/<crate>-<thing>`.
+3. Run `pwsh -File tools/task.ps1 -Keyword <area>` and edit that crate.
+4. Keep `main` green. Do not push directly to it.
+5. Open a pull request with the PR template. Fill in the crate name and the verify commands.
 
 ### CI Requirements
 

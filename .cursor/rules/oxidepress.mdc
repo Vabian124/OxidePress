@@ -1,0 +1,10 @@
+---
+description: OxidePress fork rules. Read AGENTS.md and map one crate before editing.
+alwaysApply: true
+---
+
+# OxidePress
+
+Read `AGENTS.md` before editing. Run `pwsh -File tools/task.ps1 -Keyword <area>` and change that one crate.
+
+Do not edit `LICENSE`, `themes/`, `static/`, `wp-content/`, or the upstream credit in `AUTHORS`. Do not rename the session cookie, `_rustpress_session_` option keys, `RUSTPRESS_*` env vars, the `rustpress_version` template key, or WordPress `wp_*` tables. The denylist is in `AGENTS.md`.

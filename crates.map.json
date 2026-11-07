@@ -1,0 +1,193 @@
+{
+  "verify": [
+    "cargo check --workspace",
+    "cargo test --workspace --lib --bins -- --skip e2e",
+    "cargo fmt --all -- --check"
+  ],
+  "denylist": [
+    "LICENSE, themes/, static/, wp-content/, and the upstream credit in AUTHORS",
+    "cookie rustpress_session and wp_options keys _rustpress_session_",
+    "tables rustpress_sessions, rustpress_cache, rustpress_migrations",
+    "template key rustpress_version",
+    "env RUSTPRESS_HOST, RUSTPRESS_PORT, RUSTPRESS_URL, RUSTPRESS_UPLOAD_DIR",
+    "WordPress tables wp_* and password hashes"
+  ],
+  "crates": [
+    {
+      "id": "server",
+      "package": "oxidepress-server",
+      "path": "crates/oxidepress-server",
+      "summary": "Axum HTTP server, routes, and the oxidepress binary.",
+      "keywords": ["server", "http", "axum", "route", "frontend", "admin", "xmlrpc"],
+      "neighbors": ["api", "auth", "themes", "db"]
+    },
+    {
+      "id": "cli",
+      "package": "oxidepress-cli",
+      "path": "crates/oxidepress-cli",
+      "summary": "WP-CLI-style binary oxidepress-cli.",
+      "keywords": ["cli", "wp-cli", "migrate", "command"],
+      "neighbors": ["migrate", "auth", "db"]
+    },
+    {
+      "id": "core",
+      "package": "oxidepress-core",
+      "path": "crates/oxidepress-core",
+      "summary": "Hooks, kses, rewrites, shortcodes, and shared types.",
+      "keywords": ["core", "hooks", "kses", "rewrite", "shortcode"],
+      "neighbors": ["db", "themes"]
+    },
+    {
+      "id": "db",
+      "package": "oxidepress-db",
+      "path": "crates/oxidepress-db",
+      "summary": "SeaORM models for WordPress tables.",
+      "keywords": ["db", "database", "sea-orm", "schema", "mysql"],
+      "neighbors": ["migrate", "query"]
+    },
+    {
+      "id": "query",
+      "package": "oxidepress-query",
+      "path": "crates/oxidepress-query",
+      "summary": "Post, user, term, and comment queries.",
+      "keywords": ["query", "wp_query", "posts", "comments"],
+      "neighbors": ["db", "core"]
+    },
+    {
+      "id": "auth",
+      "package": "oxidepress-auth",
+      "path": "crates/oxidepress-auth",
+      "summary": "Passwords, sessions, JWT, and roles.",
+      "keywords": ["auth", "session", "password", "jwt", "login", "cookie"],
+      "neighbors": ["db", "security"]
+    },
+    {
+      "id": "api",
+      "package": "oxidepress-api",
+      "path": "crates/oxidepress-api",
+      "summary": "WordPress REST API handlers.",
+      "keywords": ["api", "rest", "posts", "media", "users"],
+      "neighbors": ["auth", "db", "core"]
+    },
+    {
+      "id": "admin",
+      "package": "oxidepress-admin",
+      "path": "crates/oxidepress-admin",
+      "summary": "Admin screen state.",
+      "keywords": ["admin", "dashboard", "wp-admin"],
+      "neighbors": ["server", "auth"]
+    },
+    {
+      "id": "themes",
+      "package": "oxidepress-themes",
+      "path": "crates/oxidepress-themes",
+      "summary": "Tera theme engine and template tags.",
+      "keywords": ["themes", "theme", "tera", "template"],
+      "neighbors": ["core", "server"]
+    },
+    {
+      "id": "plugins",
+      "package": "oxidepress-plugins",
+      "path": "crates/oxidepress-plugins",
+      "summary": "Native and WASM plugin host.",
+      "keywords": ["plugins", "plugin", "wasm", "wasmtime"],
+      "neighbors": ["core", "server"]
+    },
+    {
+      "id": "migrate",
+      "package": "oxidepress-migrate",
+      "path": "crates/oxidepress-migrate",
+      "summary": "Schema create, default options, and import.",
+      "keywords": ["migrate", "migration", "schema", "import"],
+      "neighbors": ["db", "cli"]
+    },
+    {
+      "id": "cache",
+      "package": "oxidepress-cache",
+      "path": "crates/oxidepress-cache",
+      "summary": "Object, page, transient, and Redis caches.",
+      "keywords": ["cache", "redis", "transient"],
+      "neighbors": ["server", "db"]
+    },
+    {
+      "id": "cron",
+      "package": "oxidepress-cron",
+      "path": "crates/oxidepress-cron",
+      "summary": "WP-Cron scheduler.",
+      "keywords": ["cron", "schedule", "wp-cron"],
+      "neighbors": ["server", "db"]
+    },
+    {
+      "id": "seo",
+      "package": "oxidepress-seo",
+      "path": "crates/oxidepress-seo",
+      "summary": "Meta tags, Open Graph, and Yoast-compatible data.",
+      "keywords": ["seo", "yoast", "opengraph", "meta"],
+      "neighbors": ["core", "db"]
+    },
+    {
+      "id": "forms",
+      "package": "oxidepress-forms",
+      "path": "crates/oxidepress-forms",
+      "summary": "Form submissions and Contact Form 7 data.",
+      "keywords": ["forms", "cf7", "contact"],
+      "neighbors": ["db", "server"]
+    },
+    {
+      "id": "fields",
+      "package": "oxidepress-fields",
+      "path": "crates/oxidepress-fields",
+      "summary": "Custom field groups and storage.",
+      "keywords": ["fields", "acf", "meta"],
+      "neighbors": ["db", "api"]
+    },
+    {
+      "id": "multisite",
+      "package": "oxidepress-multisite",
+      "path": "crates/oxidepress-multisite",
+      "summary": "Multisite tables and site lookup.",
+      "keywords": ["multisite", "network", "sites"],
+      "neighbors": ["db"]
+    },
+    {
+      "id": "commerce",
+      "package": "oxidepress-commerce",
+      "path": "crates/oxidepress-commerce",
+      "summary": "Products, cart, and orders.",
+      "keywords": ["commerce", "woocommerce", "cart", "orders"],
+      "neighbors": ["db", "server"]
+    },
+    {
+      "id": "security",
+      "package": "oxidepress-security",
+      "path": "crates/oxidepress-security",
+      "summary": "Rate limits, WAF, audit log, and login protection.",
+      "keywords": ["security", "waf", "rate-limit", "wordfence"],
+      "neighbors": ["auth", "server"]
+    },
+    {
+      "id": "i18n",
+      "package": "oxidepress-i18n",
+      "path": "crates/oxidepress-i18n",
+      "summary": "Translations and plural rules.",
+      "keywords": ["i18n", "l10n", "translation", "plural"],
+      "neighbors": ["core"]
+    },
+    {
+      "id": "blocks",
+      "package": "oxidepress-blocks",
+      "path": "crates/oxidepress-blocks",
+      "summary": "Gutenberg block rendering.",
+      "keywords": ["blocks", "gutenberg", "block"],
+      "neighbors": ["core", "themes"]
+    },
+    {
+      "id": "e2e",
+      "package": "oxidepress-e2e",
+      "path": "crates/oxidepress-e2e",
+      "summary": "Comparisons against a live WordPress instance.",
+      "keywords": ["e2e", "visual", "comparison", "selenium"],
+      "neighbors": ["server"]
+    }
+  ]
+}

@@ -1,3 +1,11 @@
+# OxidePress
+
+Independent fork of [RustPress](https://github.com/LegacyToRustProject/RustPress) by Ryuji Yasukochi. Upstream went inactive, so this tree continues the same GPL-2.0-only work under a new name. The original `LICENSE` is unchanged. See [AUTHORS](AUTHORS).
+
+The text below is the upstream README until a dedicated docs task rewrites it.
+
+---
+
 # RustPress
 
 **WordPress, rewritten in Rust.** Connect to your existing WordPress database — your content, themes, and plugins are converted and served instantly, 100x faster.

@@ -1,0 +1,25 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-themes"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Theme engine with WordPress template hierarchy for OxidePress"
+
+[dependencies]
+oxidepress-core = { workspace = true }
+oxidepress-db = { workspace = true }
+oxidepress-query = { workspace = true }
+tera = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+regex = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"

@@ -1,0 +1,21 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-commerce"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "E-commerce plugin for OxidePress - products, cart, orders, and payments"
+
+[dependencies]
+oxidepress-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

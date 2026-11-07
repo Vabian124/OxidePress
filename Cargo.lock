@@ -2833,6 +2833,377 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidepress-admin"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "chrono",
+ "oxidepress-auth",
+ "oxidepress-core",
+ "oxidepress-db",
+ "oxidepress-plugins",
+ "oxidepress-query",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-api"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "chrono",
+ "image",
+ "md-5",
+ "oxidepress-auth",
+ "oxidepress-core",
+ "oxidepress-db",
+ "oxidepress-query",
+ "oxidepress-themes",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oxidepress-auth"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "argon2",
+ "async-trait",
+ "axum",
+ "bcrypt",
+ "chrono",
+ "data-encoding",
+ "hmac",
+ "jsonwebtoken",
+ "md-5",
+ "moka",
+ "oxidepress-core",
+ "oxidepress-db",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "sha1",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oxidepress-blocks"
+version = "0.2.0"
+dependencies = [
+ "oxidepress-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-cache"
+version = "0.2.0"
+dependencies = [
+ "moka",
+ "oxidepress-core",
+ "redis",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-cli"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "dotenvy",
+ "oxidepress-auth",
+ "oxidepress-cache",
+ "oxidepress-core",
+ "oxidepress-cron",
+ "oxidepress-db",
+ "oxidepress-migrate",
+ "oxidepress-plugins",
+ "sea-orm",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "oxidepress-commerce"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oxidepress-core"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "hmac",
+ "lettre",
+ "regex",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-cron"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-db"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-e2e"
+version = "0.2.0"
+dependencies = [
+ "base64",
+ "image",
+ "reqwest",
+ "scraper",
+ "serde",
+ "serde_json",
+ "similar",
+ "thirtyfour",
+ "tokio",
+]
+
+[[package]]
+name = "oxidepress-fields"
+version = "0.2.0"
+dependencies = [
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-forms"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "oxidepress-i18n"
+version = "0.2.0"
+dependencies = [
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-migrate"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "oxidepress-core",
+ "oxidepress-db",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-multisite"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-plugins"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "oxidepress-core",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "wasmtime",
+ "wat",
+]
+
+[[package]]
+name = "oxidepress-query"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "oxidepress-db",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-security"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "oxidepress-seo"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "regex",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
+name = "oxidepress-server"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "axum",
+ "base64",
+ "chrono",
+ "dotenvy",
+ "image",
+ "infer",
+ "md-5",
+ "oxidepress-admin",
+ "oxidepress-api",
+ "oxidepress-auth",
+ "oxidepress-blocks",
+ "oxidepress-cache",
+ "oxidepress-commerce",
+ "oxidepress-core",
+ "oxidepress-cron",
+ "oxidepress-db",
+ "oxidepress-fields",
+ "oxidepress-forms",
+ "oxidepress-i18n",
+ "oxidepress-migrate",
+ "oxidepress-multisite",
+ "oxidepress-plugins",
+ "oxidepress-query",
+ "oxidepress-security",
+ "oxidepress-seo",
+ "oxidepress-themes",
+ "regex",
+ "sea-orm",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "tera",
+ "thiserror 2.0.18",
+ "tokio",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "oxidepress-themes"
+version = "0.2.0"
+dependencies = [
+ "chrono",
+ "oxidepress-core",
+ "oxidepress-db",
+ "oxidepress-query",
+ "regex",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tera",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "parking"
 version = "2.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3797,377 +4168,6 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "untrusted",
-]
-
-[[package]]
-name = "rustpress-admin"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "chrono",
- "rustpress-auth",
- "rustpress-core",
- "rustpress-db",
- "rustpress-plugins",
- "rustpress-query",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-api"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "chrono",
- "image",
- "md-5",
- "rustpress-auth",
- "rustpress-core",
- "rustpress-db",
- "rustpress-query",
- "rustpress-themes",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rustpress-auth"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "argon2",
- "async-trait",
- "axum",
- "bcrypt",
- "chrono",
- "data-encoding",
- "hmac",
- "jsonwebtoken",
- "md-5",
- "moka",
- "rustpress-core",
- "rustpress-db",
- "sea-orm",
- "serde",
- "serde_json",
- "sha1",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rustpress-blocks"
-version = "0.1.0"
-dependencies = [
- "regex",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-cache"
-version = "0.1.0"
-dependencies = [
- "moka",
- "redis",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-cli"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "dotenvy",
- "rustpress-auth",
- "rustpress-cache",
- "rustpress-core",
- "rustpress-cron",
- "rustpress-db",
- "rustpress-migrate",
- "rustpress-plugins",
- "sea-orm",
- "serde_json",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "rustpress-commerce"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rustpress-core"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "hmac",
- "lettre",
- "regex",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-cron"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-db"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rustpress-core",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-e2e"
-version = "0.1.0"
-dependencies = [
- "base64",
- "image",
- "reqwest",
- "scraper",
- "serde",
- "serde_json",
- "similar",
- "thirtyfour",
- "tokio",
-]
-
-[[package]]
-name = "rustpress-fields"
-version = "0.1.0"
-dependencies = [
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-forms"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "regex",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "rustpress-i18n"
-version = "0.1.0"
-dependencies = [
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-migrate"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rustpress-core",
- "rustpress-db",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-multisite"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-plugins"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "rustpress-core",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "wasmtime",
- "wat",
-]
-
-[[package]]
-name = "rustpress-query"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "rustpress-core",
- "rustpress-db",
- "sea-orm",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-security"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "regex",
- "rustpress-core",
- "serde",
- "serde_json",
- "thiserror 2.0.18",
- "tracing",
- "url",
-]
-
-[[package]]
-name = "rustpress-seo"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "regex",
- "rustpress-core",
- "serde",
- "serde_json",
- "tracing",
-]
-
-[[package]]
-name = "rustpress-server"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "axum",
- "base64",
- "chrono",
- "dotenvy",
- "image",
- "infer",
- "md-5",
- "regex",
- "rustpress-admin",
- "rustpress-api",
- "rustpress-auth",
- "rustpress-blocks",
- "rustpress-cache",
- "rustpress-commerce",
- "rustpress-core",
- "rustpress-cron",
- "rustpress-db",
- "rustpress-fields",
- "rustpress-forms",
- "rustpress-i18n",
- "rustpress-migrate",
- "rustpress-multisite",
- "rustpress-plugins",
- "rustpress-query",
- "rustpress-security",
- "rustpress-seo",
- "rustpress-themes",
- "sea-orm",
- "serde",
- "serde_json",
- "serde_urlencoded",
- "tera",
- "thiserror 2.0.18",
- "tokio",
- "tower",
- "tower-http",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "rustpress-themes"
-version = "0.1.0"
-dependencies = [
- "chrono",
- "regex",
- "rustpress-core",
- "rustpress-db",
- "rustpress-query",
- "serde",
- "serde_json",
- "tempfile",
- "tera",
- "thiserror 2.0.18",
- "tracing",
 ]
 
 [[package]]

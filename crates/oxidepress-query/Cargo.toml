@@ -1,0 +1,20 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-query"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "WordPress-compatible query engine (WP_Query) for OxidePress"
+
+[dependencies]
+oxidepress-core = { workspace = true }
+oxidepress-db = { workspace = true }
+sea-orm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,21 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Core types and hook system for OxidePress"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+regex = { workspace = true }
+chrono = { workspace = true }
+lettre = { workspace = true }
+hmac = "0.12"
+sha2 = "0.10"

@@ -1,0 +1,19 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-fields"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Advanced Custom Fields for OxidePress - custom field management"
+
+[dependencies]
+oxidepress-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]

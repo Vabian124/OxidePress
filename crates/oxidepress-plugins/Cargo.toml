@@ -1,0 +1,33 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Plugin system with WASM runtime for OxidePress"
+
+[features]
+default = []
+wasm-runtime = ["wasmtime"]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("wasm-runtime"))'] }
+
+[dependencies]
+oxidepress-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+tokio = { workspace = true }
+wasmtime = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = "3"
+wasmtime = { workspace = true }
+wat = { workspace = true }

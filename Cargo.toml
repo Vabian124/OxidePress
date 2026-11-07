@@ -1,36 +1,40 @@
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
 [workspace]
 resolver = "2"
 members = [
-    "crates/rustpress-core",
-    "crates/rustpress-db",
-    "crates/rustpress-query",
-    "crates/rustpress-auth",
-    "crates/rustpress-themes",
-    "crates/rustpress-api",
-    "crates/rustpress-admin",
-    "crates/rustpress-plugins",
-    "crates/rustpress-migrate",
-    "crates/rustpress-cache",
-    "crates/rustpress-cron",
-    "crates/rustpress-server",
-    "crates/rustpress-cli",
-    "crates/rustpress-e2e",
-    "crates/rustpress-seo",
-    "crates/rustpress-forms",
-    "crates/rustpress-fields",
-    "crates/rustpress-multisite",
-    "crates/rustpress-commerce",
-    "crates/rustpress-security",
-    "crates/rustpress-i18n",
-    "crates/rustpress-blocks",
+    "crates/oxidepress-core",
+    "crates/oxidepress-db",
+    "crates/oxidepress-query",
+    "crates/oxidepress-auth",
+    "crates/oxidepress-themes",
+    "crates/oxidepress-api",
+    "crates/oxidepress-admin",
+    "crates/oxidepress-plugins",
+    "crates/oxidepress-migrate",
+    "crates/oxidepress-cache",
+    "crates/oxidepress-cron",
+    "crates/oxidepress-server",
+    "crates/oxidepress-cli",
+    "crates/oxidepress-e2e",
+    "crates/oxidepress-seo",
+    "crates/oxidepress-forms",
+    "crates/oxidepress-fields",
+    "crates/oxidepress-multisite",
+    "crates/oxidepress-commerce",
+    "crates/oxidepress-security",
+    "crates/oxidepress-i18n",
+    "crates/oxidepress-blocks",
 ]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.88"
 license = "GPL-2.0"
-description = "RustPress - A WordPress-compatible CMS built in Rust"
+authors = ["Vabian124"]
+description = "OxidePress - a WordPress-compatible CMS built in Rust. Independent fork of RustPress."
 
 [workspace.metadata.wp-compat]
 wordpress-db-schema = "6.9"
@@ -39,25 +43,25 @@ phase = "8"
 
 [workspace.dependencies]
 # Internal crates
-rustpress-core = { path = "crates/rustpress-core" }
-rustpress-db = { path = "crates/rustpress-db" }
-rustpress-query = { path = "crates/rustpress-query" }
-rustpress-auth = { path = "crates/rustpress-auth" }
-rustpress-themes = { path = "crates/rustpress-themes" }
-rustpress-api = { path = "crates/rustpress-api" }
-rustpress-admin = { path = "crates/rustpress-admin" }
-rustpress-plugins = { path = "crates/rustpress-plugins" }
-rustpress-migrate = { path = "crates/rustpress-migrate" }
-rustpress-cache = { path = "crates/rustpress-cache" }
-rustpress-cron = { path = "crates/rustpress-cron" }
-rustpress-seo = { path = "crates/rustpress-seo" }
-rustpress-forms = { path = "crates/rustpress-forms" }
-rustpress-fields = { path = "crates/rustpress-fields" }
-rustpress-multisite = { path = "crates/rustpress-multisite" }
-rustpress-security = { path = "crates/rustpress-security" }
-rustpress-i18n = { path = "crates/rustpress-i18n" }
-rustpress-blocks = { path = "crates/rustpress-blocks" }
-rustpress-commerce = { path = "crates/rustpress-commerce" }
+oxidepress-core = { path = "crates/oxidepress-core" }
+oxidepress-db = { path = "crates/oxidepress-db" }
+oxidepress-query = { path = "crates/oxidepress-query" }
+oxidepress-auth = { path = "crates/oxidepress-auth" }
+oxidepress-themes = { path = "crates/oxidepress-themes" }
+oxidepress-api = { path = "crates/oxidepress-api" }
+oxidepress-admin = { path = "crates/oxidepress-admin" }
+oxidepress-plugins = { path = "crates/oxidepress-plugins" }
+oxidepress-migrate = { path = "crates/oxidepress-migrate" }
+oxidepress-cache = { path = "crates/oxidepress-cache" }
+oxidepress-cron = { path = "crates/oxidepress-cron" }
+oxidepress-seo = { path = "crates/oxidepress-seo" }
+oxidepress-forms = { path = "crates/oxidepress-forms" }
+oxidepress-fields = { path = "crates/oxidepress-fields" }
+oxidepress-multisite = { path = "crates/oxidepress-multisite" }
+oxidepress-security = { path = "crates/oxidepress-security" }
+oxidepress-i18n = { path = "crates/oxidepress-i18n" }
+oxidepress-blocks = { path = "crates/oxidepress-blocks" }
+oxidepress-commerce = { path = "crates/oxidepress-commerce" }
 
 # Web framework
 axum = "0.8"

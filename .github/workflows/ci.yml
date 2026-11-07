@@ -108,7 +108,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           files: |
-            target/${{ matrix.target }}/release/rustpress-server
-            target/${{ matrix.target }}/release/rustpress-server.exe
-            target/${{ matrix.target }}/release/rustpress-cli
-            target/${{ matrix.target }}/release/rustpress-cli.exe
+            target/${{ matrix.target }}/release/oxidepress
+            target/${{ matrix.target }}/release/oxidepress.exe
+            target/${{ matrix.target }}/release/oxidepress-cli
+            target/${{ matrix.target }}/release/oxidepress-cli.exe
