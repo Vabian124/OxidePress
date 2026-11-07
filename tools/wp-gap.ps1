@@ -4,7 +4,9 @@
     Diff the pinned WordPress schema against OxidePress migrations.
 .DESCRIPTION
     Downloads schema.php and version.php for a WordPress tag, parses CREATE TABLE
-    statements, and writes gaps/schema.json. Does not modify Rust sources.
+    statements, and writes gaps/schema.json. Also records the ALTER statements
+    that CREATE TABLE IF NOT EXISTS will not apply to an older database.
+    Does not modify Rust sources.
 #>
 [CmdletBinding()]
 param(
@@ -224,6 +226,36 @@ function Get-WordPressVersions {
     }
 }
 
+function Get-ExistingDatabaseRepairs {
+    param($Tables)
+    $posts = $Tables['wp_posts']
+    $authorIndex = @($posts.Indexes.Values | Where-Object { $_.Name -eq 'type_status_author' })
+    if ($authorIndex.Count -ne 1) {
+        throw 'Pinned schema is missing the wp_posts type_status_author index.'
+    }
+    $comments = $Tables['wp_comments']
+    if (-not $comments.Columns.Contains('comment_author')) {
+        throw 'Pinned schema is missing wp_comments.comment_author.'
+    }
+    $column = [string]$comments.Columns['comment_author']
+    @(
+        [ordered]@{
+            id    = 'wp_posts.type_status_author'
+            kind  = 'add_index'
+            table = 'wp_posts'
+            name  = 'type_status_author'
+            sql   = "ALTER TABLE wp_posts ADD KEY type_status_author ($($authorIndex[0].Columns))"
+        },
+        [ordered]@{
+            id    = 'wp_comments.comment_author'
+            kind  = 'modify_column'
+            table = 'wp_comments'
+            name  = 'comment_author'
+            sql   = "ALTER TABLE wp_comments MODIFY $column"
+        }
+    )
+}
+
 function Assert-RequiredTables {
     param(
         $Tables,
@@ -312,12 +344,14 @@ try {
             })
     }
 
+    $repairs = @(Get-ExistingDatabaseRepairs -Tables $wordpressTables)
+
     $report = [ordered]@{
         pin                     = $Tag
         wordpress_version       = $wordpressMeta.Version
         wordpress_db_version    = $wordpressMeta.DbVersion
         oxidepress_db_version   = $oxideDbVersion
-        coverage                = 'Single-site CREATE TABLE statements. Integer defaults are compared numerically. The second wp_users definition is the multisite variant and is not required for a single-site install. SeaORM entities and PHP behavior are outside this report.'
+        coverage                = 'Single-site CREATE TABLE statements. Integer defaults are compared numerically. The second wp_users definition is the multisite variant and is not required for a single-site install. existing_database_repairs are ALTER statements for databases created before this pin; CREATE TABLE IF NOT EXISTS does not apply them. SeaORM entities and PHP behavior are outside this report.'
         sources                 = [ordered]@{
             wordpress_schema = "$base/wp-admin/includes/schema.php"
             wordpress_version = "$base/wp-includes/version.php"
@@ -329,6 +363,7 @@ try {
         extra_tables            = $extraTables
         clean_tables            = @($clean)
         tables                  = @($diffs)
+        existing_database_repairs = $repairs
     }
 
     $gapsDir = Split-Path -Parent $reportPath
@@ -345,6 +380,7 @@ try {
     Write-Host "multisite tables left to a later migrator: $($multisiteAbsent.Count)"
     Write-Host "tables with column or index drift: $($diffs.Count)"
     Write-Host "clean tables: $($clean.Count)"
+    Write-Host "existing-database repairs: $($repairs.Count)"
     Write-Host "wrote gaps/schema.json"
 
     $gapCount = $missingTables.Count + $extraTables.Count + $diffs.Count

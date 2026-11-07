@@ -3,7 +3,7 @@
   "wordpress_version": "7.1.4",
   "wordpress_db_version": 61833,
   "oxidepress_db_version": 61833,
-  "coverage": "Single-site CREATE TABLE statements. Integer defaults are compared numerically. The second wp_users definition is the multisite variant and is not required for a single-site install. SeaORM entities and PHP behavior are outside this report.",
+  "coverage": "Single-site CREATE TABLE statements. Integer defaults are compared numerically. The second wp_users definition is the multisite variant and is not required for a single-site install. existing_database_repairs are ALTER statements for databases created before this pin; CREATE TABLE IF NOT EXISTS does not apply them. SeaORM entities and PHP behavior are outside this report.",
   "sources": {
     "wordpress_schema": "https://raw.githubusercontent.com/WordPress/WordPress/7.1.4/wp-admin/includes/schema.php",
     "wordpress_version": "https://raw.githubusercontent.com/WordPress/WordPress/7.1.4/wp-includes/version.php",
@@ -42,5 +42,21 @@
     "wp_usermeta",
     "wp_users"
   ],
-  "tables": []
+  "tables": [],
+  "existing_database_repairs": [
+    {
+      "id": "wp_posts.type_status_author",
+      "kind": "add_index",
+      "table": "wp_posts",
+      "name": "type_status_author",
+      "sql": "ALTER TABLE wp_posts ADD KEY type_status_author (post_type,post_status,post_author)"
+    },
+    {
+      "id": "wp_comments.comment_author",
+      "kind": "modify_column",
+      "table": "wp_comments",
+      "name": "comment_author",
+      "sql": "ALTER TABLE wp_comments MODIFY comment_author tinytext not null"
+    }
+  ]
 }

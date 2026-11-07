@@ -1,8 +1,9 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and align the single-site schema with WordPress 7.1.4.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress, align the single-site schema with WordPress 7.1.4, repair existing databases, and grant the default admin the administrator role.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 pub mod analyze;
 pub mod rewrites;
+pub mod upgrade;
 
 use sea_orm::{ConnectionTrait, DatabaseConnection, DbErr, Statement};
 use tracing::info;
@@ -11,7 +12,8 @@ use tracing::info;
 ///
 /// Handles creating the WordPress-compatible database schema
 /// and running migrations for OxidePress-specific extensions.
-/// Create all WordPress core tables if they don't exist.
+/// Create all WordPress core tables if they don't exist, then repair an
+/// existing database that was created before the 7.1.4 alignment.
 /// Compatible with the WordPress 7.1.4 single-site schema (db_version 61833).
 /// Multisite global tables are not created here.
 pub async fn create_wp_tables(db: &DatabaseConnection) -> Result<(), DbErr> {
@@ -35,6 +37,8 @@ pub async fn create_wp_tables(db: &DatabaseConnection) -> Result<(), DbErr> {
         db.execute(Statement::from_string(sea_orm::DatabaseBackend::MySql, sql))
             .await?;
     }
+
+    upgrade::upgrade_existing_schema(db).await?;
 
     info!("all WordPress tables created");
     Ok(())
@@ -88,6 +92,20 @@ pub async fn create_default_admin(
 
     db.execute(Statement::from_string(sea_orm::DatabaseBackend::MySql, sql))
         .await?;
+
+    // WordPress stores the role in wp_usermeta. Without it, login treats this
+    // account as a subscriber and wp-admin screens that check capabilities refuse it.
+    let grant = "INSERT INTO wp_usermeta (user_id, meta_key, meta_value)
+        SELECT u.ID, 'wp_capabilities', 'a:1:{s:13:\"administrator\";b:1;}'
+        FROM wp_users AS u
+        LEFT JOIN wp_usermeta AS m
+          ON m.user_id = u.ID AND m.meta_key = 'wp_capabilities'
+        WHERE u.user_login = 'admin' AND m.umeta_id IS NULL";
+    db.execute(Statement::from_string(
+        sea_orm::DatabaseBackend::MySql,
+        grant,
+    ))
+    .await?;
 
     info!("default admin user created");
     Ok(())
