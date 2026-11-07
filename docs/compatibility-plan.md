@@ -25,14 +25,17 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - Field groups for `post`, `page`, `product`, and `all` show on the matching editor and save as post meta.
 - Activating a plugin writes `active_plugins`. The next boot marks those discovered plugins active.
 - The security screen reloads the firewall, rate limit, and login settings it stored, and a save says so.
+- `wf_firewall_enabled=0` skips the firewall scan. The block list still refuses stored addresses. A missing option keeps the scan on.
+- `wf_rate_limit_maxRequestsPerMin` is the per-minute ceiling. `wf_rate_limit_enabled=0` does not refuse.
+- The public comment form accepts WordPress field names. An approved comment appears on the post.
 
 ## Next, in order
 
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Firewall switch is enforced | `oxidepress-server` | Turning the firewall off stops `wf_firewall_enabled=0` from blocking requests. Turning it on scans them again. The block list still refuses stored addresses either way. |
-| 2 | Rate limit uses the saved ceiling | `oxidepress-server` | `wf_rate_limit_maxRequestsPerMin` is the limit the next request is measured against, and a disabled rate limit does not refuse. |
-| 3 | Comments on the public post | `oxidepress-server` | A visitor can post a comment on an open post, and the public page lists approved comments. |
+| 1 | Login lockout uses the saved settings | `oxidepress-server` | `wf_login_sec_enabled`, `wf_login_sec_maxFailures`, and `wf_login_sec_lockoutMins` control the next login attempt. A disabled lockout does not lock the address. |
+| 2 | Comment moderation | `oxidepress-server` | When `comment_moderation` is on, a new comment stays unapproved and the public page does not list it. When it is off, the comment is approved and listed. |
+| 3 | Search results | `oxidepress-server` | `/?s=word` lists published posts whose title or content contains that word, and an empty search says so. |
 
 ## Not this plan
 
