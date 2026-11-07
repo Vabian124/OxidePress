@@ -1,5 +1,6 @@
 # Modified by Vabian124 on 2026-11-07 to add the plugin rustify crate.
 # Modified by Vabian124 on 2026-11-07 to add the PHP plugin runtime crate.
+# Modified by Vabian124 on 2026-11-07 to move Wasmtime to a patched release.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [workspace]
@@ -141,5 +142,5 @@ lettre = { version = "0.11", features = ["tokio1-native-tls", "builder", "smtp-t
 redis = { version = "0.27", features = ["tokio-comp", "aio"] }
 
 # WASM runtime
-wasmtime = { version = "42", default-features = false, features = ["cranelift", "runtime"] }
+wasmtime = { version = "=50.0.1", default-features = false, features = ["cranelift", "runtime"] }
 wat = "1"

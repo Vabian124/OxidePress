@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to satisfy the workspace Clippy gate.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 //! Form submission validation.
 
 use std::collections::HashMap;
@@ -118,13 +121,11 @@ fn validate_field_type(field: &FieldConfig, value: &str, errors: &mut Vec<Valida
                 });
             }
         }
-        FormField::Date => {
-            if chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_err() {
-                errors.push(ValidationError {
-                    field_name: field.name.clone(),
-                    message: format!("{} must be a valid date (YYYY-MM-DD).", field.label),
-                });
-            }
+        FormField::Date if chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").is_err() => {
+            errors.push(ValidationError {
+                field_name: field.name.clone(),
+                message: format!("{} must be a valid date (YYYY-MM-DD).", field.label),
+            });
         }
         _ => {}
     }

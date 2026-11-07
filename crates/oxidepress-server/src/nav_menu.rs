@@ -238,7 +238,7 @@ pub fn render_nav_menu(
 #[allow(clippy::only_used_in_recursion)]
 fn render_menu_item(html: &mut String, item: &MenuItem, current_url: &str, depth: usize) {
     let mut li_classes = vec![
-        format!("menu-item"),
+        "menu-item".to_string(),
         format!("menu-item-{}", item.id),
         format!("menu-item-type-{}", item.item_type),
         format!("menu-item-object-{}", item.object),

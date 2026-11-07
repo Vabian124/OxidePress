@@ -12,7 +12,7 @@ The text below is the upstream README until a dedicated docs task rewrites it.
 
 [![CI](https://github.com/rustpress-project/RustPress/actions/workflows/ci.yml/badge.svg)](https://github.com/rustpress-project/RustPress/actions/workflows/ci.yml)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
-[![Rust: 1.88+](https://img.shields.io/badge/Rust-1.91%2B-orange.svg)](https://www.rust-lang.org/)
+[![Rust: 1.97+](https://img.shields.io/badge/Rust-1.97%2B-orange.svg)](https://www.rust-lang.org/)
 [![Status: Beta Candidate](https://img.shields.io/badge/Status-Beta%20Candidate-orange.svg)](#status)
 
 > **Beta Candidate** — Targeting WordPress 6.9 compatibility. Visual parity: **98.27%** average across 9 page types (TT25). Themes TT19–TT25 implemented. 15 Gutenberg core blocks. OWASP hardening in progress. Contributions and testing welcome!

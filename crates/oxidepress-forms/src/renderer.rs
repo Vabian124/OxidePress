@@ -56,7 +56,7 @@ pub fn render_form(config: &FormConfig, action_url: &str) -> String {
 pub fn render_field(field: &FieldConfig) -> String {
     let mut html = String::with_capacity(512);
 
-    let id = format!("field-{}", &field.name);
+    let id = format!("field-{}", field.name);
     let required_attr = if field.required { " required" } else { "" };
     let required_marker = if field.required {
         " <span class=\"required\">*</span>"

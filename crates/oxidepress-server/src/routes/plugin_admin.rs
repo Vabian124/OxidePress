@@ -743,7 +743,7 @@ async fn product_form_error(
         &form.status.clone().unwrap_or_else(|| "publish".to_string()),
     );
     ctx.insert("slug", "");
-    ctx.insert("acf_fields", &acf_fields_from_form(state, &form).await);
+    ctx.insert("acf_fields", &acf_fields_from_form(state, form).await);
     super::wp_admin::render_admin(state, "admin/woocommerce-product-edit.html", &ctx)
         .into_response()
 }
@@ -1074,7 +1074,7 @@ async fn acf_fields_save(
         .chars()
         .filter(|c| c.is_alphanumeric() || *c == '_')
         .collect::<String>();
-    let group_key = format!("group_{}", &post_name);
+    let group_key = format!("group_{post_name}");
 
     let group_post = wp_posts::ActiveModel {
         post_author: Set(session.user_id),
@@ -1110,7 +1110,7 @@ async fn acf_fields_save(
                 .chars()
                 .filter(|c| c.is_alphanumeric() || *c == '_')
                 .collect::<String>();
-            let field_key = format!("field_{}_{}", &post_name, &field_name);
+            let field_key = format!("field_{post_name}_{field_name}");
 
             let field_post = wp_posts::ActiveModel {
                 post_author: Set(session.user_id),
@@ -1317,11 +1317,10 @@ async fn render_security_dashboard(
         .filter(|c| matches!(c.status, oxidepress_security::CheckStatus::Pass))
         .count();
     let checks_total = checks.len();
-    let security_score = if checks_total > 0 {
-        (checks_passed * 100) / checks_total
-    } else {
-        0
-    };
+    let security_score = checks_passed
+        .checked_mul(100)
+        .and_then(|value| value.checked_div(checks_total))
+        .unwrap_or(0);
 
     let scan_results: Vec<serde_json::Value> = checks
         .iter()
@@ -1359,11 +1358,14 @@ async fn security_dashboard_save(
                         .get_option_or("wf_blocked_ips", "")
                         .await
                         .unwrap_or_default();
-                    let mut settings = oxidepress_security::WordfenceSettings::default();
-                    settings.blocked_ips = if current.is_empty() {
-                        vec![]
+                    let blocked_ips = if current.is_empty() {
+                        Vec::new()
                     } else {
                         current.split(',').map(|s| s.trim().to_string()).collect()
+                    };
+                    let mut settings = oxidepress_security::WordfenceSettings {
+                        blocked_ips,
+                        ..Default::default()
                     };
                     if settings.block_ip(ip) {
                         let _ = state

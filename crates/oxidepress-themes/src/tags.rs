@@ -75,7 +75,7 @@ pub struct PostTemplateData {
 impl PostTemplateData {
     /// Convert a wp_posts model to template-friendly data.
     pub fn from_model(post: &wp_posts::Model, site_url: &str) -> Self {
-        let permalink = format!("{}/{}", site_url.trim_end_matches('/'), &post.post_name);
+        let permalink = format!("{}/{}", site_url.trim_end_matches('/'), post.post_name);
 
         Self {
             id: post.id,

@@ -101,8 +101,7 @@ fn header_text(path: &Path) -> Option<String> {
 
 fn header_value(text: &str, key: &str) -> Option<String> {
     for line in text.lines() {
-        let stripped = line
-            .trim_start_matches(|ch: char| matches!(ch, ' ' | '\t' | '\u{feff}' | '/' | '*' | '#'));
+        let stripped = line.trim_start_matches([' ', '\t', '\u{feff}', '/', '*', '#']);
         let Some(value) = stripped.strip_prefix(key) else {
             continue;
         };

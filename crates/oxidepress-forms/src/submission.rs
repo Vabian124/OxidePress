@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to satisfy the workspace Clippy gate.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 //! Form submission storage and management.
 
 use std::collections::HashMap;
@@ -90,7 +93,7 @@ impl SubmissionStore {
             .filter(|s| s.form_id == form_id)
             .cloned()
             .collect();
-        results.sort_by(|a, b| b.submitted_at.cmp(&a.submitted_at));
+        results.sort_by_key(|submission| std::cmp::Reverse(submission.submitted_at));
         results
     }
 

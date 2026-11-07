@@ -13,7 +13,7 @@ OxidePress is an independent GPL-2.0-only fork of RustPress by Ryuji Yasukochi. 
 
 ### Requirements
 
-- Rust 1.91+ (stable)
+- Rust 1.97+ (stable)
 - MySQL 8.0+ or MariaDB 10.5+
 - Docker (optional, for E2E testing)
 

@@ -85,7 +85,7 @@ fn default_global_styles(id: &str, stylesheet: &str) -> Value {
         "stylesheet": stylesheet,
         "_links": {
             "self": [{"href": format!("/wp-json/wp/v2/global-styles/{}", id)}],
-            "about": [{"href": format!("/wp-json/wp/v2/types/wp_global_styles")}]
+            "about": [{"href": "/wp-json/wp/v2/types/wp_global_styles"}]
         }
     })
 }

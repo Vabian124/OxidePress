@@ -84,6 +84,7 @@ struct Vars<'a> {
     search_phrase: &'a str,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn present_front(
     titles: &YoastTitles,
     social: &YoastSocial,
@@ -438,6 +439,7 @@ struct ArticleSchema<'a> {
     author: &'a str,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn schema_graph(
     title: &str,
     crumb: &str,

@@ -236,13 +236,8 @@ impl XmlRpcValue {
         match self {
             XmlRpcValue::Int(i) => *i,
             XmlRpcValue::String(s) => s.parse().unwrap_or(0),
-            XmlRpcValue::Boolean(b) => {
-                if *b {
-                    1
-                } else {
-                    0
-                }
-            }
+            XmlRpcValue::Boolean(true) => 1,
+            XmlRpcValue::Boolean(false) => 0,
             _ => 0,
         }
     }

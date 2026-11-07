@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to drop a format call with no placeholders.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use super::{extra_classes, text_align_class};
 use serde_json::Value;
 
@@ -8,7 +11,7 @@ pub fn render(attrs: &Value, inner_html: &str) -> String {
         .unwrap_or(2)
         .clamp(1, 6);
 
-    let mut classes = vec![format!("wp-block-heading")];
+    let mut classes = vec!["wp-block-heading".to_string()];
     if let Some(ta) = text_align_class(attrs) {
         classes.push(ta);
     }
