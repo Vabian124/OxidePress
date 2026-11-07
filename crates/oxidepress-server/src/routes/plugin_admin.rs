@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to store the SEO sitemap checkboxes.
+// Modified by Vabian124 on 2026-11-07 to show custom fields on the product editor.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -317,6 +317,18 @@ pub(crate) struct ProductForm {
     stock_quantity: Option<String>,
     image_url: Option<String>,
     status: Option<String>,
+    #[serde(
+        default,
+        deserialize_with = "one_or_many_strings",
+        alias = "acf_name[]"
+    )]
+    acf_name: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "one_or_many_strings",
+        alias = "acf_value[]"
+    )]
+    acf_value: Vec<String>,
 }
 
 async fn shop_allowed(state: &AppState, session: &Session) -> bool {
@@ -388,6 +400,107 @@ async fn unique_product_slug(
     format!("{base}-{except_id}")
 }
 
+async fn product_acf_fields(state: &AppState, post_id: u64) -> Vec<serde_json::Value> {
+    let groups = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("acf-field-group"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let meta = if post_id > 0 {
+        queries::get_post_meta_map(&state.db, post_id)
+            .await
+            .unwrap_or_default()
+    } else {
+        std::collections::HashMap::new()
+    };
+    let mut fields = Vec::new();
+    for group in groups {
+        let location = queries::get_post_meta_value(&state.db, group.id, "location_rules")
+            .await
+            .ok()
+            .flatten()
+            .unwrap_or_default();
+        if location != "product" && location != "all" {
+            continue;
+        }
+        let children = wp_posts::Entity::find()
+            .filter(wp_posts::Column::PostType.eq("acf-field"))
+            .filter(wp_posts::Column::PostParent.eq(group.id))
+            .filter(wp_posts::Column::PostStatus.eq("publish"))
+            .order_by_asc(wp_posts::Column::MenuOrder)
+            .all(&state.db)
+            .await
+            .unwrap_or_default();
+        for child in children {
+            let name = child.post_excerpt.clone();
+            if name.is_empty() {
+                continue;
+            }
+            let field_type = if child.post_content.contains("textarea") {
+                "textarea"
+            } else {
+                "text"
+            };
+            fields.push(serde_json::json!({
+                "label": child.post_title,
+                "name": name,
+                "field_type": field_type,
+                "value": meta.get(&child.post_excerpt).cloned().unwrap_or_default(),
+                "key": child.post_name,
+            }));
+        }
+    }
+    fields
+}
+
+async fn acf_fields_from_form(state: &AppState, form: &ProductForm) -> Vec<serde_json::Value> {
+    let mut fields = product_acf_fields(state, form.post_id.unwrap_or(0)).await;
+    for field in &mut fields {
+        let Some(name) = field.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if let Some(value) = form
+            .acf_name
+            .iter()
+            .position(|candidate| candidate == name)
+            .and_then(|index| form.acf_value.get(index))
+        {
+            field["value"] = serde_json::Value::String(value.clone());
+        }
+    }
+    fields
+}
+
+async fn save_product_acf(state: &AppState, post_id: u64, form: &ProductForm) {
+    let definitions = product_acf_fields(state, 0).await;
+    for (index, name) in form.acf_name.iter().enumerate() {
+        if name.is_empty() {
+            continue;
+        }
+        let value = form.acf_value.get(index).cloned().unwrap_or_default();
+        if queries::set_post_meta(&state.db, post_id, name, &value)
+            .await
+            .is_err()
+        {
+            continue;
+        }
+        if let Some(key) = definitions.iter().find_map(|field| {
+            let matches = field.get("name").and_then(|item| item.as_str()) == Some(name.as_str());
+            matches.then(|| {
+                field
+                    .get("key")
+                    .and_then(|item| item.as_str())
+                    .unwrap_or("")
+            })
+        }) {
+            if !key.is_empty() {
+                let _ = queries::set_post_meta(&state.db, post_id, &format!("_{name}"), key).await;
+            }
+        }
+    }
+}
+
 pub(crate) async fn wc_product_editor(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
@@ -450,6 +563,7 @@ pub(crate) async fn wc_product_editor(
         ctx.insert("image_url", &woo.image_url);
         ctx.insert("status", &post.post_status);
         ctx.insert("slug", &woo.slug);
+        ctx.insert("acf_fields", &product_acf_fields(&state, post.id).await);
     } else {
         ctx.insert("is_new", &true);
         ctx.insert("post_id", &0u64);
@@ -463,6 +577,7 @@ pub(crate) async fn wc_product_editor(
         ctx.insert("image_url", "");
         ctx.insert("status", "publish");
         ctx.insert("slug", "");
+        ctx.insert("acf_fields", &product_acf_fields(&state, 0).await);
     }
 
     super::wp_admin::render_admin(&state, "admin/woocommerce-product-edit.html", &ctx)
@@ -560,6 +675,8 @@ pub(crate) async fn wc_product_save(
         }
     };
 
+    save_product_acf(&state, saved_id, &form).await;
+
     if let Err(error) = queries::set_post_meta_bulk(&state.db, saved_id, &woo.to_meta()).await {
         tracing::error!(%error, "product meta save failed");
         return product_form_error(
@@ -608,6 +725,7 @@ async fn product_form_error(
         &form.status.clone().unwrap_or_else(|| "publish".to_string()),
     );
     ctx.insert("slug", "");
+    ctx.insert("acf_fields", &acf_fields_from_form(state, &form).await);
     super::wp_admin::render_admin(state, "admin/woocommerce-product-edit.html", &ctx)
         .into_response()
 }

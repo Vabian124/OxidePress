@@ -67,6 +67,19 @@
                 </select>
             </td>
         </tr>
+        {% for field in acf_fields %}
+        <tr>
+            <th><label for="acf-{{ field.name }}">{{ field.label }}</label></th>
+            <td>
+                <input type="hidden" name="acf_name" value="{{ field.name }}">
+                {% if field.field_type == "textarea" %}
+                <textarea name="acf_value" id="acf-{{ field.name }}" rows="4" class="large-text">{{ field.value }}</textarea>
+                {% else %}
+                <input type="text" name="acf_value" id="acf-{{ field.name }}" class="regular-text" value="{{ field.value }}">
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
     </table>
     <p class="submit">
         <button type="submit" class="button button-primary">Save product</button>
