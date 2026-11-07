@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to store which plugins are active.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use axum::{
     extract::{Path, State},
     http::StatusCode,
@@ -31,6 +34,7 @@ async fn activate_plugin(
         .activate(&name)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    persist_active_plugins(&state).await;
 
     Ok(Json(PluginActionResponse {
         ok: true,
@@ -49,6 +53,7 @@ async fn deactivate_plugin(
         .deactivate(&name)
         .await
         .map_err(|e| (StatusCode::NOT_FOUND, e))?;
+    persist_active_plugins(&state).await;
 
     Ok(Json(PluginActionResponse {
         ok: true,
@@ -56,4 +61,23 @@ async fn deactivate_plugin(
         status: "Inactive".to_string(),
         message: format!("Plugin '{name}' deactivated successfully."),
     }))
+}
+
+async fn persist_active_plugins(state: &AdminState) {
+    let active = state.plugin_registry.active_plugins().await;
+    let pairs = active
+        .iter()
+        .enumerate()
+        .map(|(index, entry)| {
+            (
+                oxidepress_core::PhpValue::Int(index as i64),
+                oxidepress_core::PhpValue::String(entry.meta.name.clone()),
+            )
+        })
+        .collect();
+    let serialized = oxidepress_core::php_serialize(&oxidepress_core::PhpValue::Array(pairs));
+    let options = oxidepress_db::options::OptionsManager::new(state.db.clone());
+    if let Err(error) = options.update_option("active_plugins", &serialized).await {
+        tracing::warn!(%error, "active plugins were not stored");
+    }
 }
