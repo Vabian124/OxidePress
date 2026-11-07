@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and stop printing the generated admin password.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use anyhow::Result;
@@ -72,12 +72,11 @@ async fn main() -> Result<()> {
 
         // Create default admin user
         let admin_password = std::env::var("ADMIN_PASSWORD").unwrap_or_else(|_| {
-            let generated = uuid::Uuid::new_v4().to_string();
-            eprintln!(
-                "WARNING: ADMIN_PASSWORD not set. Generated random admin password: {generated}"
+            tracing::warn!(
+                "ADMIN_PASSWORD is not set. A random admin password was generated and was not logged. \
+                 Set ADMIN_PASSWORD before the first run."
             );
-            eprintln!("Set ADMIN_PASSWORD env var to use a specific password.");
-            generated
+            uuid::Uuid::new_v4().to_string()
         });
         let admin_hash = oxidepress_auth::PasswordHasher::hash_argon2(&admin_password)
             .expect("Failed to hash admin password");
