@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to restore active plugins after a restart.
+// Modified by Vabian124 on 2026-11-07 to pass the visitor address into request handlers.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -615,7 +615,10 @@ async fn main() -> Result<()> {
     info!("  Health: http://{}/health", addr);
     info!("  Shop:   http://{}/shop", addr);
 
-    axum::serve(listener, app)
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
         .with_graceful_shutdown(shutdown_signal())
         .await?;
 

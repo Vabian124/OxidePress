@@ -3,6 +3,7 @@
 {% block title %}Comments{% endblock %}
 
 {% block content %}
+<!-- Modified by Vabian124 on 2026-11-07 to show the commenter address. -->
 <h1>Comments</h1>
 
 <ul class="subsubsub clearfix">
@@ -28,6 +29,9 @@
             <td>
                 <strong>{{ c.author }}</strong><br>
                 <span style="color:#646970;font-size:12px">{{ c.author_email }}</span>
+                {% if c.author_ip %}
+                <br><span style="color:#646970;font-size:12px">{{ c.author_ip }}</span>
+                {% endif %}
             </td>
             <td>
                 <div style="margin-bottom:4px">{{ c.content | truncate(length=200) }}</div>

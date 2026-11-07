@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to lock logins with the saved security settings.
+// Modified by Vabian124 on 2026-11-07 to show the commenter address on the comments screen.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -3101,6 +3101,7 @@ async fn comments_list(
                 "post_id": c.comment_post_id,
                 "author": c.comment_author,
                 "author_email": c.comment_author_email,
+                "author_ip": c.comment_author_ip,
                 "content": c.comment_content,
                 "status": c.comment_approved,
                 "date": c.comment_date.format("%Y-%m-%d %H:%M").to_string(),

@@ -36,12 +36,11 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - A logged-in comment stores that account’s display name, email, and user id when the form leaves the name blank.
 - When `require_name_email` is on, or the option is missing, a guest comment without an email is refused. A logged-in account can still comment.
 - A reply with `comment_parent` is listed under that comment.
+- A new comment stores the visitor address. The comments screen shows that address under the author.
 
 ## Next, in order
 
-| # | Work | Crate | Done when |
-|---|---|---|---|
-| 1 | Commenter address | `oxidepress-server` | A new comment stores the visitor address, and the comments screen shows it. |
+The public holes checked on 2026-11-07 are in the list above. Add the next row from a page that still fails on the local site.
 
 ## Not this plan
 

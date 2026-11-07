@@ -1,8 +1,8 @@
-// Modified by Vabian124 on 2026-11-07 to require a guest email when that setting is on.
+// Modified by Vabian124 on 2026-11-07 to store the visitor address on a new comment.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
-    extract::{Form, Path, Query, State},
+    extract::{ConnectInfo, Form, Path, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     routing::get,
@@ -13,6 +13,7 @@ use sea_orm::{
     QueryOrder, QuerySelect,
 };
 use serde::Deserialize;
+use std::net::SocketAddr;
 use std::sync::Arc;
 
 use oxidepress_db::entities::{
@@ -1835,9 +1836,29 @@ async fn signed_in_commenter(state: &AppState, headers: &HeaderMap) -> Option<wp
         .flatten()
 }
 
+fn commenter_address(headers: &HeaderMap, peer: SocketAddr) -> String {
+    headers
+        .get("x-forwarded-for")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.split(',').next())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .or_else(|| {
+            headers
+                .get("x-real-ip")
+                .and_then(|value| value.to_str().ok())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        })
+        .unwrap_or_else(|| peer.ip().to_string())
+}
+
 async fn submit_comment(
     State(state): State<Arc<AppState>>,
     headers: HeaderMap,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     Form(form): Form<CommentForm>,
 ) -> Response {
     // The theme comment form has no nonce. A supplied nonce still has to match.
@@ -1925,7 +1946,7 @@ async fn submit_comment(
         comment_author: Set(author),
         comment_author_email: Set(email),
         comment_author_url: Set(author_url),
-        comment_author_ip: Set(String::new()),
+        comment_author_ip: Set(commenter_address(&headers, peer)),
         comment_date: Set(now),
         comment_date_gmt: Set(now),
         comment_content: Set(form.comment.trim().to_string()),
