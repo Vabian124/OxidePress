@@ -4,6 +4,8 @@ Checked on 2026-11-07 against a local OxidePress site (Twenty Twenty-Five, MySQL
 
 The shop is OxidePress commerce. It stores a product and an order in `wp_posts` using the WooCommerce post types `product` and `shop_order`, and a shop manager can edit the price and picture. It is a small slice of that data model: one simple product, a cart cookie, and a checkout that records the order. Variations, coupons, shipping rates, tax, payment gateways, stock changes, and the WooCommerce lookup tables are not implemented. A picture is a URL in post meta, not an attachment in the media library. The cart and the thank-you page live in memory and reset when the server restarts. The order row remains.
 
+The shop, product, cart, and checkout pages use the active theme, including its stylesheets, header, and footer. Footer labels in the theme that were left as `href="#"` are filled from published pages. Blog opens the home page, Shop opens `/shop`, and About, FAQs, Authors, Events, Patterns, and Themes open their pages.
+
 PHP plugins from WordPress.org do not run. The names Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce in the admin are OxidePress screens that read and write the same kinds of rows.
 
 ## Five plugin screens
