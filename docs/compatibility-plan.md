@@ -31,14 +31,17 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - `wf_login_sec_enabled`, `wf_login_sec_maxFailures`, and `wf_login_sec_lockoutMins` control the next login attempt. A disabled lockout does not lock the address.
 - `comment_moderation=1` keeps a new comment off the public page. When it is off, the comment is approved and listed.
 - `/?s=word` lists published posts whose title or content contains that word. An empty result says “No results found.”
+- `/{year}/`, `/{year}/{month}/`, and `/{year}/{month}/{day}/` list the published posts from that date.
+- The public post lists approved comments only, and the stored comment count counts those same rows.
+- A logged-in comment stores that account’s display name, email, and user id when the form leaves the name blank.
 
 ## Next, in order
 
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Logged-in comment author | `oxidepress-server` | A logged-in visitor’s comment uses their display name and email, and the form does not ask for a name. |
-| 2 | Trash and spam stay off the site | `oxidepress-server` | A comment marked spam or trash is not listed on the public post, and the comment count ignores it. |
-| 3 | Date archives | `oxidepress-server` | `/{year}/`, `/{year}/{month}/`, and `/{year}/{month}/{day}/` list the published posts from that date. |
+| 1 | Name and email required | `oxidepress-server` | When `require_name_email` is on, a guest comment without an email is refused. A logged-in account can still comment. |
+| 2 | Commenter address | `oxidepress-server` | A new comment stores the visitor address, and the comments screen shows it. |
+| 3 | Reply parent | `oxidepress-server` | A reply with `comment_parent` is listed under that comment. |
 
 ## Not this plan
 

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to hold comments when moderation is on.
+// Modified by Vabian124 on 2026-11-07 to sign comments with the logged-in account.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -1816,8 +1816,28 @@ async fn comment_is_approved(state: &AppState) -> String {
 
 // ---- Comment Submission ----
 
+async fn signed_in_commenter(state: &AppState, headers: &HeaderMap) -> Option<wp_users::Model> {
+    let session_id = headers
+        .get(header::COOKIE)?
+        .to_str()
+        .ok()?
+        .split(';')
+        .find_map(|part| {
+            part.trim()
+                .strip_prefix("rustpress_session=")
+                .map(str::to_string)
+        })?;
+    let session = state.sessions.get_session(&session_id).await?;
+    wp_users::Entity::find_by_id(session.user_id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+}
+
 async fn submit_comment(
     State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
     Form(form): Form<CommentForm>,
 ) -> Response {
     // The theme comment form has no nonce. A supplied nonce still has to match.
@@ -1832,14 +1852,36 @@ async fn submit_comment(
         }
     }
 
-    let author = form.author.as_deref().unwrap_or("").trim().to_string();
-    let email = form.email.as_deref().unwrap_or("").trim().to_string();
-
-    // Validate required fields
-    if author.is_empty() || form.comment.trim().is_empty() {
+    if form.comment.trim().is_empty() {
         return Redirect::to(&format!("/{}?comment_error=required", form.comment_post_id))
             .into_response();
     }
+
+    let account = signed_in_commenter(&state, &headers).await;
+    let (author, email, user_id, author_url) = if let Some(user) = account {
+        let name = if user.display_name.trim().is_empty() {
+            user.user_login.clone()
+        } else {
+            user.display_name.trim().to_string()
+        };
+        let url = form
+            .url
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+            .unwrap_or(user.user_url);
+        (name, user.user_email, user.id, url)
+    } else {
+        let author = form.author.as_deref().unwrap_or("").trim().to_string();
+        let email = form.email.as_deref().unwrap_or("").trim().to_string();
+        if author.is_empty() {
+            return Redirect::to(&format!("/{}?comment_error=required", form.comment_post_id))
+                .into_response();
+        }
+        let url = form.url.unwrap_or_default().trim().to_string();
+        (author, email, 0, url)
+    };
 
     // Check that the post exists and comments are open
     let post = wp_posts::Entity::find_by_id(form.comment_post_id)
@@ -1874,7 +1916,7 @@ async fn submit_comment(
         comment_post_id: Set(form.comment_post_id),
         comment_author: Set(author),
         comment_author_email: Set(email),
-        comment_author_url: Set(form.url.unwrap_or_default().trim().to_string()),
+        comment_author_url: Set(author_url),
         comment_author_ip: Set(String::new()),
         comment_date: Set(now),
         comment_date_gmt: Set(now),
@@ -1884,7 +1926,7 @@ async fn submit_comment(
         comment_agent: Set(String::new()),
         comment_type: Set("comment".to_string()),
         comment_parent: Set(form.comment_parent.unwrap_or(0)),
-        user_id: Set(0),
+        user_id: Set(user_id),
     };
 
     let _ = new_comment.insert(&state.db).await;
