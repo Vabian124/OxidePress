@@ -22,16 +22,17 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - Appearance → Themes lists the themes on disk and marks the theme the server is serving.
 - Checkout decreases `_stock` and writes `_stock_status` for products that track stock.
 - `/author/{slug}/`, `/category/{slug}/`, and `/tag/{slug}/` query the matching published posts and render the theme archive template.
+- Field groups for `post`, `page`, `product`, and `all` show on the matching editor and save as post meta.
+- Activating a plugin writes `active_plugins`. The next boot marks those discovered plugins active.
+- The security screen reloads the firewall, rate limit, and login settings it stored, and a save says so.
 
 ## Next, in order
 
-The named single-site list above is in. These are the next holes a visitor or editor still hits.
-
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Custom fields on posts and pages | `oxidepress-server` | A field group whose location is `post` or `page` shows on that editor and saves as post meta. The product editor already does this. The block editor does not. |
-| 2 | Plugin activation survives restart | `oxidepress-server` | Activating a discovered plugin writes `active_plugins`, and the next boot loads that list. |
-| 3 | Security screen reloads what it saved | `oxidepress-server` | Firewall, rate limit, and login protection checkboxes show the stored options, and a successful save says so. |
+| 1 | Firewall switch is enforced | `oxidepress-server` | Turning the firewall off stops `wf_firewall_enabled=0` from blocking requests. Turning it on scans them again. The block list still refuses stored addresses either way. |
+| 2 | Rate limit uses the saved ceiling | `oxidepress-server` | `wf_rate_limit_maxRequestsPerMin` is the limit the next request is measured against, and a disabled rate limit does not refuse. |
+| 3 | Comments on the public post | `oxidepress-server` | A visitor can post a comment on an open post, and the public page lists approved comments. |
 
 ## Not this plan
 

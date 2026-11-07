@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to save custom fields for posts, pages, and products.
+// Modified by Vabian124 on 2026-11-07 to reload the security settings that were saved.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -1267,26 +1267,35 @@ async fn security_dashboard_page(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
 ) -> Html<String> {
-    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
-    ctx.insert("active_page", "security");
-    ctx.insert("saved", &false);
+    render_security_dashboard(&state, &session, false).await
+}
 
+async fn render_security_dashboard(
+    state: &AppState,
+    session: &Session,
+    saved: bool,
+) -> Html<String> {
+    let mut ctx = super::wp_admin::admin_context(state, session).await;
+    ctx.insert("active_page", "security");
+    ctx.insert("saved", &saved);
+
+    let settings = stored_security_settings(state).await;
     let waf = state.waf.read().await;
     let waf_rule_count = waf.rule_count();
     drop(waf);
-    ctx.insert("waf_enabled", &true);
+    ctx.insert("waf_enabled", &settings.firewall_enabled);
     ctx.insert("waf_rule_count", &waf_rule_count);
     ctx.insert("blocked_24h", &0u64);
 
-    ctx.insert("rate_limit_enabled", &true);
-    ctx.insert("max_rpm", &120u32);
+    ctx.insert("rate_limit_enabled", &settings.rate_limit_enabled);
+    ctx.insert("max_rpm", &settings.max_requests_per_minute);
 
     let lp = state.login_protection.read().await;
     let locked_out_count = lp.tracked_ip_count();
     drop(lp);
-    ctx.insert("login_protection_enabled", &true);
-    ctx.insert("max_attempts", &5u32);
-    ctx.insert("lockout_mins", &30u32);
+    ctx.insert("login_protection_enabled", &settings.login_security_enabled);
+    ctx.insert("max_attempts", &settings.max_login_failures);
+    ctx.insert("lockout_mins", &settings.lockout_minutes);
     ctx.insert("locked_out_count", &locked_out_count);
 
     let wf_blocked = state
@@ -1341,7 +1350,7 @@ async fn security_dashboard_page(
     ctx.insert("checks_total", &checks_total);
     ctx.insert("scan_results", &scan_results);
 
-    render_admin(&state, "admin/wordfence.html", &ctx)
+    render_admin(state, "admin/wordfence.html", &ctx)
 }
 
 async fn security_dashboard_save(
@@ -1441,5 +1450,24 @@ async fn security_dashboard_save(
         _ => {}
     }
 
-    security_dashboard_page(State(state), Extension(session)).await
+    render_security_dashboard(&state, &session, true).await
+}
+
+async fn stored_security_settings(state: &AppState) -> oxidepress_security::WordfenceSettings {
+    let keys = [
+        "wf_firewall_enabled",
+        "wf_login_sec_enabled",
+        "wf_login_sec_maxFailures",
+        "wf_login_sec_lockoutMins",
+        "wf_rate_limit_enabled",
+        "wf_rate_limit_maxRequestsPerMin",
+        "wf_blocked_ips",
+    ];
+    let mut options = std::collections::HashMap::new();
+    for key in keys {
+        if let Ok(Some(value)) = state.options.get_option(key).await {
+            options.insert(key.to_string(), value);
+        }
+    }
+    oxidepress_security::WordfenceSettings::from_options(&options)
 }
