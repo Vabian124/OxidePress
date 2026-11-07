@@ -1,14 +1,16 @@
 # ADR-001: PHP Bridge Mode の採否とプラグイン互換性戦略
 
-- **ステータス**: 承認
+- **ステータス**: 承認。プラグインは AI 変換のみで PHP ランタイムは無い、という結論は、ドロップイン経路について [ADR-002](002-php-worker.md)（2026-11-07）が上書きする。フックごとの PHP-FPM、リクエストごとの FPM 呼び出し、WordPress の前に置く Rust の却下は維持する。
 - **日付**: 2026-03-07
-- **関連**: [GitHub Discussion #1](https://github.com/rustpress-project/RustPress/discussions/1)
+- **関連**: [GitHub Discussion #1](https://github.com/rustpress-project/RustPress/discussions/1)、[ADR-002](002-php-worker.md)
 
 ---
 
 ## 結論（先に読む人向け）
 
 **PHP Bridge Modeは採用しない。PHPプラグインをPHPのまま動かすのではなく、AIでRustに変換する。**
+
+2026-11-07: [ADR-002](002-php-worker.md) は、ドロップインプラグインについて「PHP ランタイムは無い」という一文を上書きする。この記録の却下は維持する。
 
 理由: WordPressのソースコードは100%オープンソースであり、「正解」が完全に読める。正解が存在する以上、AIによる変換と正解との比較検証を繰り返せば、100%の互換性は「不可能」ではなく「作業量」の問題である。
 

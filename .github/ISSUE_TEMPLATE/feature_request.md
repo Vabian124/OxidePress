@@ -1,6 +1,6 @@
 ---
 name: Feature Request
-about: Suggest a new feature or improvement
+about: Suggest an OxidePress feature or improvement
 title: "[Feature] "
 labels: ""
 assignees: ""
@@ -20,4 +20,4 @@ How does WordPress handle this? (if applicable)
 
 ## Proposed Solution
 
-How should RustPress implement this? (optional)
+How should OxidePress implement this? (optional) Name one `oxidepress-*` crate when the change is code.

@@ -1,5 +1,7 @@
 # WordPress 上位50プラグイン DBスキーマ調査
 
+調査メモ。現行のクレート名と PHP ワーカーは [README](../README.ja.md) と [docs/compatibility-plan.md](compatibility-plan.md)。
+
 ## 概要
 
 RustPressがWordPressプラグインのデータを正しく表示するために必要な

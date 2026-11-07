@@ -1,14 +1,16 @@
 # ADR-001: PHP Bridge Mode and Plugin Compatibility Strategy
 
-- **Status**: Accepted
+- **Status**: Accepted. The conclusion that plugins are AI conversion only, with no PHP runtime, is superseded for the drop-in path by [ADR-002](002-php-worker.en.md) (2026-11-07). Rejections of PHP-FPM per hook, one FPM call per request, and Rust as a proxy in front of WordPress stay rejected.
 - **Date**: 2026-03-07
-- **Related**: [GitHub Discussion #1 (Japanese)](https://github.com/rustpress-project/RustPress/discussions/1)
+- **Related**: [GitHub Discussion #1 (Japanese)](https://github.com/rustpress-project/RustPress/discussions/1), [ADR-002](002-php-worker.en.md)
 
 ---
 
 ## Conclusion (TL;DR)
 
 **PHP Bridge Mode is rejected. Instead of running PHP plugins as-is, we convert them to Rust using AI.**
+
+2026-11-07: [ADR-002](002-php-worker.en.md) supersedes the "no PHP runtime" sentence for drop-in plugins. The rejections in this record stay rejected.
 
 Why this works: WordPress is 100% open source. The "correct answer" is fully readable. Since the correct answer exists, iterating through AI conversion and comparison testing against the original guarantees that 100% compatibility is not "impossible" — it's a matter of work volume.
 

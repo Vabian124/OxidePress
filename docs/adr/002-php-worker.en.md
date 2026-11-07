@@ -1,0 +1,76 @@
+# ADR-002: One PHP CLI worker for drop-in plugins
+
+- **Status**: Accepted
+- **Date**: 2026-11-07
+- **Supersedes**: The [ADR-001](001-php-bridge-mode.en.md) conclusion that plugins are AI conversion only and that there is no PHP runtime, for the drop-in path
+- **Related**: [crates/oxidepress-php/REAL-PLUGINS.md](../../crates/oxidepress-php/REAL-PLUGINS.md)
+
+---
+
+## Conclusion (TL;DR)
+
+Drop-in PHP plugins run in one long-lived system `php` CLI worker. Native crates keep the rows OxidePress already owns: SEO, fields, forms, security, and shop. `oxidepress-rustify` is a parser skeleton and is not the runtime.
+
+ADR-001 still rejects PHP-FPM per hook, one FPM call per request, and Rust as a proxy in front of a full WordPress process.
+
+## Context
+
+OxidePress serves a WordPress MySQL database from a Rust binary. Themes in this tree are Tera themes. PHP themes do not run.
+
+ADR-001 (2026-03-07) chose full AI conversion and no PHP runtime. A site can still drop a PHP plugin into the plugins directory and expect its hooks to register. Rebuilding every plugin before that file can boot is not the path this tree is on.
+
+The worker that landed in `oxidepress-php` is a single process. Rust sends length-prefixed JSON. The worker includes each active PHP plugin, returns hook and shortcode registrations, and runs a callback when Rust fires that tag. Echo from `wp_head` and `wp_footer` is appended to the theme HTML. `oxidepress-core` holds those hooks and shortcodes.
+
+## Options considered
+
+### PHP-FPM per hook — still rejected
+
+ADR-001 option A. A page fires many hooks. One FastCGI round-trip per hook costs more than it saves. ADR-002 does not revive it.
+
+### One PHP-FPM call per request — still rejected
+
+ADR-001 option B. That is a Rust proxy in front of a WordPress bootstrap. ADR-002 does not revive it.
+
+### Rust in front of a full WordPress process — still rejected
+
+ADR-001 options B and D. Nginx in front of WordPress already does this. OxidePress stays the CMS. The worker is not a WordPress tree.
+
+### AI conversion of every plugin as the current runtime — not this decision
+
+ADR-001's conversion strategy can stay as later work. `oxidepress-rustify` parses a plugin header and literal `add_action`, `add_filter`, and `add_shortcode` calls, and emits a Rust skeleton. It does not execute PHP. It is not the drop-in runtime.
+
+### One PHP CLI worker — accepted
+
+Spawn `php` from `OXIDEPRESS_PHP` or `PATH` once, and only when at least one active plugin is `PluginType::Php`. If `php` is missing, the site still boots and those plugins are marked Error. Discovery reads a `Plugin Name:` header in the first 8 KiB of a top-level `*.php` file or a PHP file one directory deep.
+
+The rows Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce store stay on the native screens: `oxidepress-seo`, `oxidepress-fields`, `oxidepress-forms`, `oxidepress-security`, and `oxidepress-commerce`. Those screens are not a claim that the WordPress.org plugins are fully reimplemented.
+
+## Decision
+
+One PHP CLI worker for drop-in plugins. Native crates for the rows OxidePress already owns.
+
+## Rationale
+
+A dropped-in file can register hooks without booting WordPress and without a FastCGI call per hook. The native screens already read and write the option and post rows those five plugins use. Splitting the two paths keeps the server a Rust CMS and gives the PHP file a place to run.
+
+The probe on 2026-11-07 (PHP 8.3.36) is the behavior record: Akismet 5.7.3a16, Classic Editor 1.7.0, Classic Widgets 0.3, Disable Comments 2.9.1, Yoast Duplicate Post 4.7, Hello Dolly 1.7.2, and Health Check 1.7.1 finish the probe hooks. Contact Form 7 6.2.4.1 stops in `includes/filesystem.php` on `require_once ABSPATH . 'wp-admin/includes/file.php'`. This decision does not vendor `wp-admin/includes` or stub that file.
+
+## Impact
+
+What the worker does:
+
+- Registers plugins under the WordPress basename (`hello-dolly/hello.php`). Activation also accepts the display name.
+- Attaches hooks and shortcodes to `oxidepress-core`.
+- Appends `wp_head` and `wp_footer` echo to the theme HTML.
+
+What it does not do:
+
+- `ABSPATH` is the plugins directory plus a slash. That is wrong for a real WordPress root. Giving it a real root, without vendoring `wp-admin` or `wp-includes`, is later work in `oxidepress-php`.
+- Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
+- `POST /admin/plugins/{name}/activate` cannot contain a slash, so `oxidepress-admin` still stores the display name. Restore accepts either form.
+- Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
+- `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
+- HTTP from the worker is absent.
+- Health Check still warns on `ABSPATH . 'wp-includes/version.php'`, because this process is not a WordPress tree.
+
+Requests for a `.php` file are still blocked by server middleware. The worker is a separate process the server starts. It is not a request uploading a `.php` file into the web root.

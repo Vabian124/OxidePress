@@ -1,6 +1,6 @@
 ---
 name: Bug Report
-about: Report a bug or unexpected behavior
+about: Report an OxidePress bug or unexpected behavior
 title: "[Bug] "
 labels: ""
 assignees: ""
@@ -26,7 +26,7 @@ What actually happened?
 
 ## Environment
 
-- RustPress version:
+- OxidePress version:
 - OS:
 - Browser (if applicable):
 - WordPress theme (if applicable):

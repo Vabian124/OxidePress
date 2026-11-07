@@ -2,9 +2,11 @@
 
 Checked against `gaps/schema.json`, `gaps/blocks.json`, and the local site on 2026-11-07.
 
-1:1 here means a single-site WordPress 7.1.4 database, the core block names, and the public and admin behavior those names imply. It does not mean executing PHP plugins. Multisite stays out: `gaps/schema.json` lists `wp_blogs`, `wp_blogmeta`, `wp_site`, `wp_sitemeta`, `wp_signups`, and `wp_registration_log` as absent on purpose.
+1:1 here means a single-site WordPress 7.1.4 database, the core block names, and the public and admin behavior those names imply. A dropped-in PHP plugin can boot in one `oxidepress-php` worker and contribute hooks and head/footer echo. That boot is partial. It is not a WordPress process, and the native screens are not a claim that the WordPress.org plugins are fully reimplemented. Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce stay on `oxidepress-seo`, `oxidepress-fields`, `oxidepress-forms`, `oxidepress-security`, and `oxidepress-commerce`. The probe record is [crates/oxidepress-php/REAL-PLUGINS.md](../crates/oxidepress-php/REAL-PLUGINS.md). The decision is [ADR-002](adr/002-php-worker.en.md).
 
-Each item names one crate. Finish and commit that crate before opening the next item.
+Multisite stays out: `gaps/schema.json` lists `wp_blogs`, `wp_blogmeta`, `wp_site`, `wp_sitemeta`, `wp_signups`, and `wp_registration_log` as absent on purpose.
+
+Each code item names one crate. A docs item says `docs`. Finish that item before opening the next.
 
 ## Already aligned
 
@@ -43,13 +45,27 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - Approving, holding, spamming, trashing, or deleting a comment rewrites the post’s stored comment count to the approved rows.
 - `/shop/`, `/cart/`, `/checkout/`, and `/shop/product/{id}/` serve the same pages as the links without a trailing slash. `/product/{slug}/` is the product permalink. It shows the stored sale price, SKU, and stock, and Add to cart puts that product in the cart.
 
+## Worker limits, checked 2026-11-07
+
+These are still true in `oxidepress-php` and `oxidepress-admin`. Nothing newer in this tree has done the code items below.
+
+- `ABSPATH` is the plugins directory plus a slash. That is wrong for a real WordPress root.
+- `POST /admin/plugins/{name}/activate` cannot contain a slash, so the route stores the display name. Restore accepts the display name or the basename.
+- `wp_enqueue_script`, `wp_enqueue_style`, `register_setting`, post types, and admin menus stay inside the worker. They do not print assets or draw a settings screen.
+- HTTP from the worker is absent.
+- Deactivating one plugin needs a process restart. `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
+
 ## Next, in order
 
-The public holes checked on 2026-11-07 are in the list above. Add the next row from a page that still fails on the local site.
+1. Docs and ADR-002. `docs`. This page, the READMEs, and [ADR-002](adr/002-php-worker.en.md).
+2. Give the worker a real WordPress-root `ABSPATH`. Do not vendor `wp-admin` or `wp-includes`. `oxidepress-php`.
+3. Teach the admin activate route to store a basename that contains a slash. `oxidepress-admin`.
+4. `wp_enqueue_script`, `wp_enqueue_style`, and admin-menu registrations stay inside the worker. `docs`. This pass records that. They do not print assets or draw a settings screen. A later server screen for them would be `oxidepress-server`.
+5. HTTP from the worker, including the class of call Akismet's spam API needs. `oxidepress-php`. Do not start this by stubbing Contact Form 7's `require_once` of `wp-admin/includes/file.php`.
 
 ## Not this plan
 
 - Multisite tables and the extra `wp_users` columns `spam` and `deleted`.
-- Loading PHP from WordPress.org. Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce stay native screens that read and write the same kinds of rows.
+- Vendoring `wp-admin` or `wp-includes`, or stubbing `wp-admin/includes/file.php`. A dropped-in plugin boots in the one worker above. That is not a WordPress tree, and the five native screens stay the path for those stored rows.
 - WooCommerce lookup tables, variations, coupons, shipping rates, tax, and payment gateways.
 - Elementor and Jetpack. The plugin analyzer already marks those incompatible.

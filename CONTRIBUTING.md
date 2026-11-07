@@ -1,115 +1,91 @@
 # Contributing to OxidePress
 
-OxidePress is an independent GPL-2.0-only fork of RustPress by Ryuji Yasukochi. See [AUTHORS](AUTHORS). One task, one crate, one pull request. Find the crate with `pwsh -File tools/task.ps1 -Keyword <word>` and read [AGENTS.md](AGENTS.md) before editing.
+OxidePress is an independent GPL-2.0-only fork of RustPress by Ryuji Yasukochi. See [AUTHORS](AUTHORS). One task, one crate, one pull request. Find the crate with `pwsh -File tools/task.ps1 -Keyword <word>` and read [AGENTS.md](AGENTS.md) before editing. The crate map is [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## Getting Started
+## Requirements
 
-1. Fork and clone the repository
-2. Copy `.env.example` to `.env` and configure your MySQL connection
-3. Run `cargo build` to verify everything compiles
-4. Run `cargo test --workspace` to verify tests pass
+- Rust 1.97+ (the CI toolchain)
+- MySQL 8 or MariaDB 10.5+
+- Docker, only for the end-to-end harness in `docker-compose.yml`
 
-## Development Setup
+Copy `.env.example` to `.env` and set `DATABASE_URL`. `RUSTPRESS_HOST` and `RUSTPRESS_PORT` keep those names. A PHP plugin needs `php` on `PATH` or `OXIDEPRESS_PHP`. If `php` is missing, the site still boots.
 
-### Requirements
-
-- Rust 1.97+ (stable)
-- MySQL 8.0+ or MariaDB 10.5+
-- Docker (optional, for E2E testing)
-
-### Running Locally
-
-```bash
-cp .env.example .env
-# Edit .env with your database credentials
+```powershell
 cargo run -p oxidepress-server
 ```
 
-### Running E2E Tests
+## Verify
 
-E2E tests compare RustPress output against a real WordPress instance:
+Scoped, while editing:
 
-```bash
-# Start WordPress + MySQL + Selenium via Docker
-docker-compose up -d
-
-# Run E2E tests
-./tests/run_e2e.sh
+```powershell
+cargo check -p <package>
+cargo test -p <package> --lib
+cargo fmt -p <package> -- --check
 ```
+
+Before a pull request:
+
+```powershell
+cargo check --workspace
+cargo test --workspace --lib --bins -- --skip e2e
+cargo fmt --all -- --check
+cargo clippy --workspace -- -D warnings
+```
+
+CI on `main` and on pull requests also runs `cargo audit` and `cargo build --release --workspace`. `RUSTFLAGS=-Dwarnings`. The audit ignores are `RUSTSEC-2023-0071` (rsa Marvin, no upstream fix), `RUSTSEC-2024-0436` (paste unmaintained), and `RUSTSEC-2026-0235` (rkyv 0.7 is an optional `rust_decimal` feature this workspace does not enable). That last ignore is not an rkyv upgrade. Wasmtime is pinned to `=50.0.1`. Release Build runs only on `v*` tags. The workflow is [`.github/workflows/ci.yml`](.github/workflows/ci.yml).
 
 ## Workflow
 
 1. Fork [Vabian124/OxidePress](https://github.com/Vabian124/OxidePress) and clone your fork.
-2. Create a branch from `main`. Name it `fix/<crate>-<thing>` or `feat/<crate>-<thing>`.
+2. Branch from `main`. Name it `fix/<crate>-<thing>` or `feat/<crate>-<thing>`.
 3. Run `pwsh -File tools/task.ps1 -Keyword <area>` and edit that crate.
-4. Keep `main` green. Do not push directly to it.
-5. Open a pull request with the PR template. Fill in the crate name and the verify commands.
+4. Open a pull request and fill in the template.
+5. Recent maintainer commits landed on `main`. Contributors still open pull requests from `fix/<crate>-<thing>` or `feat/<crate>-<thing>`.
 
-### CI Requirements
+Leave these alone unless the task names them: cookie `rustpress_session`, option keys `_rustpress_session_`, tables `rustpress_sessions` / `rustpress_cache` / `rustpress_migrations`, template key `rustpress_version`, env vars `RUSTPRESS_*`, WordPress `wp_*` tables, `themes/`, `static/`, `wp-content/`, and `LICENSE`. The upstream credit in `AUTHORS` stays.
 
-All PRs must pass these checks before merge:
+## Reporting bugs
 
-```bash
-cargo check --workspace
-cargo test --workspace --lib --bins
-cargo clippy --workspace -- -D warnings
-cargo fmt --all -- --check
-```
+Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md). Include steps to reproduce. For a WordPress behavior difference, include the WordPress output and the OxidePress output.
 
-## Reporting Bugs
+## Feature requests
 
-- Use the [bug report template](.github/ISSUE_TEMPLATE/bug_report.md)
-- Check existing issues first
-- Include steps to reproduce
-- If it's a WordPress parity issue, include the WordPress output for comparison
+Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md). A code change names one crate. The open items are in [docs/compatibility-plan.md](docs/compatibility-plan.md).
 
-## Feature Requests
-
-- Use the [feature request template](.github/ISSUE_TEMPLATE/feature_request.md)
-- Explain the motivation and WordPress behavior if applicable
-
-## WordPress Parity Testing
-
-One of the most valuable contributions is testing RustPress against WordPress and reporting differences. If you find a page, API response, or behavior that doesn't match WordPress, please file an issue with:
-
-- The URL/endpoint tested
-- WordPress output (screenshot or response body)
-- RustPress output (screenshot or response body)
-- WordPress version and theme used
-
-## Areas Where Help is Needed
-
-- **Theme compatibility** - Testing more WordPress themes beyond TT25
-- **Plugin compatibility** - Identifying commonly-used plugin APIs to implement
-- **REST API parity** - Comparing response formats with WordPress
-- **CSS/visual parity** - Finding and fixing rendering differences
-- **Performance benchmarks** - Testing under various workloads
-
-## Code Style
-
-- Follow standard Rust conventions (`cargo fmt`)
-- Use `cargo clippy` to catch common issues
-- Keep functions focused and small
-- Prefer descriptive names over comments
-- Don't add unnecessary abstractions
-
-## Crate Structure
-
-Each crate has a specific responsibility. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full architecture overview.
+## Crate table
 
 | Crate | Role |
 |-------|------|
-| `rustpress-server` | HTTP routes, middleware, server startup |
-| `rustpress-db` | Database entities, queries, options |
-| `rustpress-api` | REST API endpoints (WP v2 compatible) |
-| `rustpress-admin` | Admin dashboard backend |
-| `rustpress-auth` | Authentication, sessions, RBAC |
-| `rustpress-themes` | Template rendering, template tags |
-| `rustpress-plugins` | Plugin loading and execution |
-| `rustpress-cache` | Caching layers |
-| `rustpress-query` | WP_Query-style query building |
-| `rustpress-e2e` | End-to-end tests |
+| `oxidepress-server` | HTTP server, binary `oxidepress` |
+| `oxidepress-cli` | CLI binary `oxidepress-cli` |
+| `oxidepress-core` | Hooks, shortcodes, shared types |
+| `oxidepress-db` | Entities and options |
+| `oxidepress-query` | Query builder |
+| `oxidepress-themes` | Tera themes. PHP themes do not run |
+| `oxidepress-api` | REST endpoints |
+| `oxidepress-admin` | Admin routes, including plugin activate |
+| `oxidepress-auth` | Sessions, passwords, roles |
+| `oxidepress-plugins` | Plugin registry |
+| `oxidepress-php` | PHP CLI worker, the drop-in runtime |
+| `oxidepress-rustify` | Parser skeleton. Not the runtime |
+| `oxidepress-cache` | Cache |
+| `oxidepress-cron` | Scheduled tasks |
+| `oxidepress-migrate` | Schema migration |
+| `oxidepress-blocks` | Block renderer and REST catalog |
+| `oxidepress-seo` | Stored SEO rows |
+| `oxidepress-fields` | Stored field groups |
+| `oxidepress-forms` | Stored contact forms |
+| `oxidepress-security` | Stored firewall and login rows |
+| `oxidepress-commerce` | Stored shop rows |
+| `oxidepress-i18n` | Translations |
+| `oxidepress-multisite` | In the workspace. The single-site plan leaves it off |
+| `oxidepress-e2e` | End-to-end tests |
+
+## Code style
+
+Run `cargo fmt` and `cargo clippy -- -D warnings`. Keep a change inside the crate the task names.
 
 ## License
 
-By contributing, you agree that your contributions will be licensed under GPL v2.
+By contributing, you agree that your contributions will be licensed under GPL-2.0-only.

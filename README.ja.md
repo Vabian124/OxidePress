@@ -1,343 +1,77 @@
-# RustPress
+# OxidePress
 
-**WordPressをRustで書き直したCMS。** 既存のWordPressデータベースに接続するだけで、コンテンツもテーマもプラグインも変換されて即座に動く。100倍高速に。
+[RustPress](https://github.com/LegacyToRustProject/RustPress)（Ryuji Yasukochi）の独立したフォーク。上流が止まったため、このツリーは同じ GPL-2.0-only の作業を新しい名前で続ける。元の `LICENSE` は変えていない。[AUTHORS](AUTHORS) を参照。
 
+[![CI](https://github.com/Vabian124/OxidePress/actions/workflows/ci.yml/badge.svg)](https://github.com/Vabian124/OxidePress/actions/workflows/ci.yml)
 [![License: GPL v2](https://img.shields.io/badge/License-GPL%20v2-blue.svg)](https://www.gnu.org/licenses/old-licenses/gpl-2.0.en.html)
 [![Rust: 1.97+](https://img.shields.io/badge/Rust-1.97%2B-orange.svg)](https://www.rust-lang.org/)
-[![Status: Alpha](https://img.shields.io/badge/Status-Alpha-yellow.svg)](#ステータス)
 
 [English](README.md)
 
-> **Alpha Release** — WordPress 6.9 互換を目標に開発中。フロントエンドはTwenty Twenty-Fiveテーマと97%以上のピクセル一致を達成。コントリビューション歓迎！
+OxidePress は、WordPress のデータベースを Rust のバイナリから配信する。このツリーのテーマは Tera テーマである。PHP テーマは動かない。置いた PHP プラグインは、1 つのワーカーで起動し、フックと head/footer の echo を足すことができる。それは部分的な動作である。WordPress ではない。保存された SEO、フィールド、フォーム、セキュリティ、ショップの行を扱う経路は、ネイティブの画面のままである。すべてのプラグインを AI で変換することは、今のランタイムではない。[`oxidepress-rustify`](crates/oxidepress-rustify) は、後から使う骨格として残してよい。
 
----
+WordPress 7.1.4 に対するスキーマと動作の記録は [docs/compatibility-plan.md](docs/compatibility-plan.md)（2026-11-07 確認）。その日のローカルサイトの状態は [docs/alpha-status.md](docs/alpha-status.md)。
 
-## 課題: WordPressはセキュリティ危機にある
+## プラグインの二つの経路
 
-WordPressはウェブの **43%** を動かしている — 8億サイト以上。しかし、この数字の裏にある現実は深刻である:
+1. ネイティブの Rust 画面は、Yoast、ACF、Contact Form 7、Wordfence、WooCommerce と同じ種類の行を読み書きする。クレートは `oxidepress-seo`、`oxidepress-fields`、`oxidepress-forms`、`oxidepress-security`、`oxidepress-commerce`。WordPress.org のプラグインを完全に再実装した、という主張ではない。
+2. ドロップインの PHP。[`oxidepress-php`](crates/oxidepress-php) がランタイムである。`oxidepress-rustify` はパーサの骨格であり、ランタイムではない。
 
-| 問題 | 規模 |
-|------|------|
-| **古いバージョンのWordPress** | [全サイトの49.8%が古いバージョンで稼働](https://www.wpbeginner.com/research/ultimate-wordpress-statistics/) |
-| **脆弱なプラグイン** | WPセキュリティ問題の[97%がプラグインの脆弱性](https://patchstack.com/whitepaper/state-of-wordpress-security-in-2024/) |
-| **放置されたサイト** | 数百万の「セットアップして忘れた」サイトがセキュリティ更新なしで公開中 |
-| **年間ハッキング件数** | 1日あたり約13,000サイトがハッキング被害（[年間約470万サイト](https://www.colorlib.com/wp/wordpress-statistics/)） |
-| **PHPのメモリ消費** | プロセスあたり50-100 MB、同時接続数が制限される |
-| **サーバーコスト** | PHPのリクエスト単位モデルではスケールに高額なホスティングが必要 |
+PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが一つである。Rust とは長さ付き JSON で話す。フックとショートコードは `oxidepress-core` に付く。フックごとの PHP-FPM ではない。リクエストごとの FPM 呼び出しでもない。WordPress プロセスの前に置いた Rust でもない。[ADR-001](docs/adr/001-php-bridge-mode.md) はそれらを却下した。[ADR-002](docs/adr/002-php-worker.md) は、ドロップイン経路について、この一つのワーカーを採用する。
 
-根本的な問題: **PHPは20年前のアーキテクチャを持つインタプリタ言語である。** リクエストのたびにランタイム全体をゼロからブートストラップする。プラグインは任意のPHPコードを実行できる攻撃面そのもの。パッチ未適用のサイトは攻撃者への招待状。
+## ドロップインのプラグインにできること
 
-大半のサイトオーナーは開発者ではない。WordPressを一度セットアップし、プラグインをインストールし、二度と更新しない。セキュリティモデルが人間の継続的な注意力に依存している — しかし人間は忘れる。
+検出は、トップレベルの `*.php`、または一つ下のディレクトリにある PHP ファイルの先頭 8 KiB にある `Plugin Name:` ヘッダを読む。それより深くは再帰しない。プラグインは WordPress の basename（`hello-dolly/hello.php`）で登録される。有効化は表示名でも受け付ける。
 
-### AIが脅威を加速させている
+起動時、有効なプラグインに `PluginType::Php` が一つでもあれば、ワーカーを一つだけ起動する。プログラムは `OXIDEPRESS_PHP`、または `PATH` 上の `php` である。`php` が無いときもサイトは起動し、それらのプラグインは Error になる。
 
-この危機は壊滅的に悪化しつつある。AIがサイバー攻撃を根本的に変えている:
+`wp_head` と `wp_footer` の echo は、テーマの HTML に追記される。
 
-- **脆弱性の自動発見** — AIエージェントがインターネット全体をスキャンし、WordPressサイトを検出し、バージョンとインストール済みプラグインを特定し、既知の脆弱性を数秒で発見できる。人間の攻撃者が数時間かけていた偵察が、ミリ秒で完了する。
-- **AI生成エクスプロイト** — LLMがCVE公開情報を分析し、動作するエクスプロイトコードを生成できる。攻撃者に必要なスキルの閾値がほぼゼロに低下した。
-- **自律型攻撃チェーン** — AIエージェントが脆弱性を発見し、エクスプロイトを生成し、ペイロードをデプロイし、永続化を確立し、横展開する — 全て人間の介入なしで。
-- **スケール** — 1つのAIエージェントが数千のWordPressサイトを同時に攻撃できる。年間470万サイトのハッキング被害は、近い将来「少なかった時代」として振り返られるだろう。
+2026-11-07 のプローブ（PHP 8.3.36）は [crates/oxidepress-php/REAL-PLUGINS.md](crates/oxidepress-php/REAL-PLUGINS.md)。Akismet、Classic Editor、Classic Widgets、Disable Comments、Yoast Duplicate Post、Hello Dolly、Health Check はプローブのフックを終えた。Contact Form 7 は、WordPress のファイルシステム API を読み込むところで止まった。このツリーは `wp-admin` も `wp-includes` も同梱せず、その require をスタブもしない。
 
-WordPressのセキュリティモデル — 「人間が手動でパッチを適用する」— は、AIの攻撃者がマシンスピードで24時間365日、8億のターゲットに対して活動する時代には生き残れない。**スケールする唯一の防御は、脆弱性の攻撃面を根本から排除すること。** それはメモリ安全なネイティブコードへのコンパイル、プラグインのサンドボックス化、PHPの任意コード実行モデルの廃止を意味する。
+## ドロップインのプラグインにできないこと
 
-これは将来の脅威ではない。今起きていることだ。
+- `ABSPATH` はプラグインディレクトリにスラッシュを足した値である。本物の WordPress ルートとしては誤りである。
+- プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
+- `POST /admin/plugins/{name}/activate` はスラッシュを含められない。そのため管理ルートは、いまも表示名を保存する。復元はどちらの形も受け付ける。
+- 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
+- `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
+- ワーカーからの HTTP は無い。Akismet はこのプロセスからスパム API を呼べない。
+- Health Check は `ABSPATH . 'wp-includes/version.php'` を include するため、いまも警告する。このプロセスは WordPress ツリーではない。
 
----
+マルチサイト、WooCommerce のルックアップテーブル、バリエーション、クーポン、配送、税、決済ゲートウェイ、Elementor、Jetpack は、今の計画の外である。
 
-## 解決策: WordPressを単一バイナリにコンパイルする
+## 起動
 
-RustPressは根本的に異なるアプローチを取る:
+Rust 1.97 以上、MySQL 8 または MariaDB 10.5 以上。`.env.example` を `.env` にコピーし、`DATABASE_URL` を WordPress のデータベースに向ける。`RUSTPRESS_HOST` と `RUSTPRESS_PORT` は、その名前のままである。未設定なら `127.0.0.1:3000` で待ち受ける。`SKIP_MIGRATIONS=true` は、そのデータベースに既にあるテーブルを使う。
 
-```
-WordPress (PHP)                    RustPress (Rust)
-├── 実行時にインタプリタ             ├── ネイティブバイナリにコンパイル
-├── プロセスあたり50-100 MB          ├── 合計35 MB
-├── リクエストごとにブートストラップ    ├── 常駐型非同期サーバー
-├── プラグイン = 任意のPHPコード      ├── プラグイン = サンドボックス化WASM or ネイティブRust
-├── 文字列操作によるSQLインジェクション ├── 型システムが強制するパラメタライズドクエリ
-├── 常にパッチが必要                  ├── 構造的にメモリ安全
-└── ページあたり ~200ms              └── ページあたり ~2ms
+```powershell
+cargo run -p oxidepress-server
 ```
 
-**既存のWordPressデータベースにRustPressを接続するだけ。サイトは100倍高速になり、構造的に安全になる。**
+リリースバイナリは `oxidepress`（Windows では `oxidepress.exe`）で、`oxidepress-server` から出る。CLI は `oxidepress-cli`。
 
----
+`docker-compose.yml` はエンドツーエンドのハーネスである。製品のインストール手順ではない。
 
-## 移行: そのまま動く
+## CI
 
-RustPressは、WordPressからの移行を「既存のデータに接続するだけ」で完了できるように設計されている:
+`main` とプルリクエストでは、GitHub Actions が Check、Test、Format、Clippy、Build Release、Security Audit を実行する。`RUSTFLAGS=-Dwarnings`。ツールチェインは Rust 1.97。Release Build は `v*` タグのときだけ実行する。
 
-### データベース — 移行作業ゼロ
+Wasmtime は `=50.0.1` にピンしている。42 系には、後のアドバイザリを解消するパッチリリースが無い。`cargo audit` は三つのアドバイザリを無視する。理由は [`.github/workflows/ci.yml`](.github/workflows/ci.yml) にある。
 
-```env
-DATABASE_URL=mysql://user:pass@localhost:3306/wordpress
-SKIP_MIGRATIONS=true
-```
+- `RUSTSEC-2023-0071` — rsa の Marvin 攻撃。上流の修正は無い
+- `RUSTSEC-2024-0436` — paste はメンテナンスされていない
+- `RUSTSEC-2026-0235` — rkyv 0.7 は、このワークスペースが有効にしていない `rust_decimal` のオプション機能である
 
-RustPressは **WordPressと全く同じテーブル** (`wp_posts`, `wp_options`, `wp_users` 等) を直接読み取る。データ変換なし、エクスポート/インポートなし、ダウンタイムなし。移行期間中、WordPressとRustPressを同じデータベース上で並行稼働させることもできる。
+最後の無視は、rkyv を上げたという意味ではない。
 
-### テーマ — AI変換
+## ドキュメント
 
-既存のWordPressテーマはAIによってPHPからTeraテンプレートに変換される。変換にはWordPress自体の出力を正解として使用し、自動ビジュアル比較テストによるピクセル単位の精度検証を行う。
-
-デフォルトテーマ（Twenty Twenty-Five相当）はRustPressに同梱され、WordPress版と **97%以上のピクセル一致** を達成している。
-
-### プラグイン — AI変換
-
-WordPressプラグインはAIによってPHPからRustに変換される。これが機能する理由:
-
-1. **WordPressは100%オープンソース** — 全てのPHPコードが読める
-2. **AIがPHPソースコードを読む** — コードがそのまま仕様書
-3. **AIがRustに変換する** — WP関数のRust実装を呼び出すコードを生成
-4. **WordPress出力と比較検証する** — 正解が常に存在する
-5. **差分を修正する** — 正解が存在するから必ず修正可能、100%一致するまで繰り返す
-
-主要プラグイン（WooCommerce、Yoast SEO、Contact Form 7、ACF、Wordfence）はこのリポジトリ内でRustネイティブとして最大性能で再構築中。
-
-> **根幹思想:** RustPressを可能にしたのはRustの速度ではない。「正解のソースコード（WordPressのPHP）が完全に存在する泥臭い変換作業を、AIがスケールさせられる時代になった」からである。 [詳細](docs/adr/001-php-bridge-mode.md)
-
----
-
-## 使命: 全てのWordPressサイトに移行経路を
-
-RustPressの目標は単に高速なCMSを作ることではない。**全世界の全WordPressサイトに移行経路を確立すること。**
-
-```
-任意のWordPressサイト
-    ↓ rustpress migrate analyze（互換性レポート）
-    ↓ rustpress migrate database（既存DBに接続）
-    ↓ rustpress migrate theme（AIがPHP → Teraに変換）
-    ↓ rustpress migrate plugins（AI変換 or Rustネイティブ代替）
-    ↓ rustpress migrate seo-audit（SEO影響ゼロを検証）
-RustPressサイト — 100倍高速、構造的に安全、単一バイナリ
-```
-
-8億のWordPressサイトは前に進む道を必要としている。専門のエンジニアチームを持つサイトだけでなく — **全てのサイト。** 3年間更新されていないが今もアクセスがある小さなブログ、中小企業のホームページ、NPOのウェブサイトも含めて。
-
-### 誰一人見捨てない
-
-**すべてのバージョンにセキュリティパッチを提供し続ける。** なぜ可能か？ AIによる開発でメンテナンスの限界コストがほぼゼロになるからだ。従来のオープンソースプロジェクトは古いバージョンのサポートを打ち切らざるを得なかった — 人間の労働コストが高すぎるからだ。RustPressはこの制約を打ち破る。AIがWordPressのバージョン間差分を読み、対応するRustパッチを生成できるなら、「サポート終了」は必然ではなく選択になる。我々は、誰一人見捨てないことを選ぶ。
-
----
-
-## Beta への道
-
-**我々のBetaは「だいたい動く」ではない。「ほぼ完成品」だ。** AI駆動開発だからこそ、基準を高く設定できる。
-
-| # | 条件 | 状態 |
-|---|------|------|
-| B-1 | WordPress上位100テーマが全て正常表示 | 計画中 |
-| B-2 | WordPress上位50プラグインのデータが移行・表示可能 | 計画中 |
-| B-3 | WP REST API v2が100%互換 | 開発中 |
-| B-4 | 全ページでWordPressと97%+ピクセルマッチ | 開発中 |
-| B-5 | `rustpress migrate` コマンド一発で5分以内に稼働 | 計画中 |
-| B-6 | OWASP Top 10 全項目に対応 | 開発中 |
-| B-7 | CI/CDが完全稼働 | 計画中 |
-
-従来の開発ならRC（リリース候補）レベル。AI開発ではこれをBetaに設定し、到達速度で価値を証明する。
-
----
-
-## パフォーマンス
-
-同一マシン、同一MySQLデータベース、同一コンテンツでのベンチマーク。
-
-| 指標 | WordPress (PHP 8.x) | RustPress (Rust) | 改善 |
-|------|---------------------|------------------|------|
-| **トップページ応答** | 200-500 ms | **2.7 ms** | **74-185倍高速** |
-| **REST API (投稿)** | 100-300 ms | **5.9 ms** | **17-51倍高速** |
-| **メモリ使用量** | 50-100 MB | **35 MB** | **1.4-2.9倍削減** |
-| **リクエスト/秒** | 10-50 rps | **509 rps** | **10-50倍** |
-| **起動時間** | 2-5秒 | **0.4秒** | **5-12倍高速** |
-| **バイナリサイズ** | PHPランタイム + 依存 | **19 MB** | 単一バイナリ |
-
----
-
-## クイックスタート
-
-### 方法1: Docker（推奨）
-
-```bash
-git clone https://github.com/rustpress-project/RustPress.git
-cd RustPress
-cp .env.example .env
-
-# MySQL + RustPress を起動
-docker compose up -d
-```
-
-`http://localhost:8080` でアクセスできます。
-
-### 方法2: ソースからビルド
-
-**必要環境:** Rust 1.88+、MySQL 8.0+（またはMariaDB 10.5+）
-
-```bash
-git clone https://github.com/rustpress-project/RustPress.git
-cd RustPress
-
-cp .env.example .env
-# .env を編集 — DATABASE_URL にWordPressデータベースを設定
-
-cargo build --release
-./target/release/rustpress-server
-```
-
-### 既存のWordPressデータベースを使用
-
-RustPressは標準の `wp_*` テーブルを直接読み取ります。`SKIP_MIGRATIONS=true` を設定し、`DATABASE_URL` をWordPressデータベースに向けてください：
-
-```env
-DATABASE_URL=mysql://user:pass@localhost:3306/wordpress
-SKIP_MIGRATIONS=true
-```
-
----
-
-## 機能
-
-### コンテンツ配信（実装済み）
-- WordPressテンプレート階層の完全対応（`single`, `page`, `archive`, `category`, `tag`, `author`, `search`, `404`）
-- Twenty Twenty-Fiveテーマとの視覚的一致（Selenium E2Eテストで97%以上のピクセル一致）
-- 投稿、固定ページ、カテゴリー、タグ、コメント（スレッド表示）
-- 固定表示投稿、パスワード保護投稿、予約投稿
-- RSSフィード (`/feed`)、XMLサイトマップ (`/sitemap.xml`)、robots.txt
-- パーマリンク構造 (`/%postname%/`, `/%year%/%monthnum%/%day%/`)
-
-### REST API（WP v2 互換）
-```
-GET/POST   /wp-json/wp/v2/posts
-GET/PUT/DEL /wp-json/wp/v2/posts/{id}
-```
-他: `/pages`, `/media`, `/users`, `/categories`, `/tags`, `/comments`, `/search`, `/settings`, `/types`, `/taxonomies`, `/menus`, `/themes`, `/plugins`
-
-### 認証とセキュリティ
-- JWT トークン（API用）、HTTP-only Cookie（セッション用）
-- Argon2（新規）+ bcrypt（WordPress既存互換）パスワードハッシュ
-- ロールベースアクセス制御（5ロール、73権限）
-- セキュリティヘッダー（CSP、X-Frame-Options、HSTS）
-
-### ネイティブRustプラグインクレート
-| クレート | WordPress相当 | 状態 |
-|---------|-------------|------|
-| `rustpress-commerce` | WooCommerce | 開発中 |
-| `rustpress-seo` | Yoast / RankMath | 開発中 |
-| `rustpress-forms` | Contact Form 7 / Gravity Forms | 開発中 |
-| `rustpress-fields` | ACF (Advanced Custom Fields) | 開発中 |
-| `rustpress-security` | Wordfence | 開発中 |
-
-### インフラストラクチャ
-- ページキャッシュ（moka、5分TTL、サブミリ秒応答）
-- gzip圧縮
-- SeaORMによるコネクションプーリング
-- コンパイル済みTeraテンプレート（起動時に一度だけパース）
-
-### 開発予定
-- [ ] `theme.json` パーサーによるCSS変数の完全一致
-- [ ] Gutenbergブロックレンダリング（高度なブロック）
-- [ ] プラグインフックシステム（`add_action`/`add_filter` のRust実装）
-- [ ] WASMプラグインランタイム（Extism）
-- [ ] 管理画面（wp-admin）の完全対応
-- [ ] マルチサイト対応
-- [ ] WPGraphQL互換エンドポイント
-- [ ] AIプラグイン/テーマ変換サービス（rustpress-convert）
-
----
-
-## アーキテクチャ
-
-```
-rustpress/
-├── crates/
-│   ├── rustpress-server    # Axum Webサーバー、ルーティング、ミドルウェア
-│   ├── rustpress-db        # SeaORM エンティティ、マイグレーション
-│   ├── rustpress-api       # WP REST API v2 エンドポイント
-│   ├── rustpress-auth      # JWT、セッション、パスワード、RBAC
-│   ├── rustpress-themes    # テンプレートエンジン、テンプレートタグ
-│   ├── rustpress-query     # WP_Query形式のクエリビルダー
-│   ├── rustpress-cache     # ページ/オブジェクト/トランジェントキャッシュ
-│   ├── rustpress-plugins   # プラグインレジストリ、WASMホスト
-│   ├── rustpress-admin     # 管理画面CRUD API
-│   ├── rustpress-migrate   # データベースマイグレーション
-│   ├── rustpress-cron      # バックグラウンドタスク
-│   └── rustpress-e2e       # Selenium ビジュアル比較テスト
-├── templates/              # Teraテンプレート（TT25互換）
-├── static/                 # CSS、フォント、アセット
-└── docker-compose.yml
-```
-
-| レイヤー | 技術 |
-|---------|------|
-| **Webフレームワーク** | [Axum](https://github.com/tokio-rs/axum) + [Tokio](https://tokio.rs/) |
-| **ORM** | [SeaORM](https://www.sea-ql.org/SeaORM/) (MySQL) |
-| **テンプレート** | [Tera](https://keats.github.io/tera/) |
-| **キャッシュ** | [Moka](https://github.com/moka-rs/moka) |
-
----
-
-## データベース互換性
-
-RustPressは **WordPressと全く同じスキーマ** を使用する:
-
-```
-wp_posts, wp_postmeta, wp_users, wp_usermeta, wp_options,
-wp_comments, wp_commentmeta, wp_terms, wp_term_taxonomy,
-wp_term_relationships, wp_links, wp_termmeta
-```
-
-WordPressとRustPressは同じデータベース上で並行稼働できる。
-
----
-
-## テスト
-
-```bash
-# ユニットテスト
-cargo test --workspace
-
-# E2Eビジュアル比較（Docker必要）
-docker compose --profile e2e up -d
-./tests/run_e2e.sh
-```
-
-E2Eテストスイートは、SeleniumでWordPressとRustPressの両方のスクリーンショットを取得し、9種類のページタイプでピクセル単位の比較を行います。閾値: 93%（実測: 97%以上）。
-
----
-
-## コントリビューション
-
-[CONTRIBUTING.md](CONTRIBUTING.md) をご参照ください。
-
-バグ報告、テーマ互換性の改善、新機能、ドキュメント、実際のWordPressデータベースでのテストなど、あらゆるコントリビューションを歓迎します。
-
----
-
-## アーキテクチャ決定記録
-
-重要な設計判断はADR（Architecture Decision Records）として記録しています:
-
-- [ADR-001: PHP Bridge Mode の採否とプラグイン互換性戦略](docs/adr/001-php-bridge-mode.md)（[English](docs/adr/001-php-bridge-mode.en.md)）
-
----
-
-## ステータス
-
-**Alpha** — **WordPress 6.9** 互換を目標に開発中。高い視覚的忠実度でWordPressコンテンツを配信できますが、プロダクション利用にはまだ対応していません。
-
-動作している機能:
-- 全WordPressコンテンツタイプの読み込みと配信
-- REST API互換
-- TT25テーマとの視覚的一致（97%以上）
-- パフォーマンス（PHP WordPressの100倍以上高速）
-
-開発中の機能:
-- 管理画面
-- フロントエンドからの書き込み操作
-- プラグインシステム
-- Gutenbergブロック完全対応
-
----
+- [アーキテクチャ](docs/ARCHITECTURE.md)
+- [コントリビューション](CONTRIBUTING.md)
+- [互換計画](docs/compatibility-plan.md)
+- [ADR 一覧](docs/adr/README.md)
 
 ## ライセンス
 
-GPL v2（WordPressと同じ）。[LICENSE](LICENSE) をご参照ください。
+GPL-2.0-only。WordPress と同じライセンス。[LICENSE](LICENSE) を参照。

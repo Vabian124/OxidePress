@@ -1,16 +1,14 @@
-# RustPress Architecture
+# OxidePress Architecture
 
-## Overview
-
-RustPress is a WordPress-compatible CMS written in Rust. It connects to an existing WordPress MySQL database and serves the same content with near-identical output.
+OxidePress is a GPL-2.0-only fork of RustPress by Ryuji Yasukochi. It serves a WordPress MySQL database from a Rust binary. Themes in this tree are Tera themes. PHP themes do not run.
 
 ```
                     HTTP Request
                          |
                          v
                   ┌─────────────┐
-                  │   Axum       │  rustpress-server
-                  │   Router     │  Routes, middleware, static files
+                  │   Axum      │  oxidepress-server (binary: oxidepress)
+                  │   Router    │  Routes, middleware, static files
                   └──────┬──────┘
                          |
           ┌──────────────┼──────────────┐
@@ -22,95 +20,103 @@ RustPress is a WordPress-compatible CMS written in Rust. It connects to an exist
          |               |              |
          v               v              v
    ┌────────────┐ ┌────────────┐ ┌────────────┐
-   │ rustpress- │ │ rustpress- │ │ rustpress- │
+   │ oxidepress-│ │ oxidepress-│ │ oxidepress-│
    │ themes     │ │ api        │ │ admin      │
-   │ (Tera)     │ │ (WP v2)    │ │            │
+   │ (Tera)     │ │            │ │            │
    └─────┬──────┘ └─────┬──────┘ └─────┬──────┘
          |               |              |
          └───────────────┼──────────────┘
                          v
                   ┌─────────────┐
-                  │ rustpress-  │  WP_Query-style query builder
+                  │ oxidepress- │  Query builder
                   │ query       │
                   └──────┬──────┘
                          v
                   ┌─────────────┐
-                  │ rustpress-  │  SeaORM entities, options API
+                  │ oxidepress- │  SeaORM entities, options
                   │ db          │
                   └──────┬──────┘
                          v
                   ┌─────────────┐
-                  │   MySQL     │  WordPress-compatible schema
+                  │   MySQL     │  WordPress wp_* tables
                   └─────────────┘
+
+   One optional process, started only when an active plugin is PHP:
+
+                  ┌─────────────┐
+                  │ php CLI     │  oxidepress-php
+                  │ one worker  │  length-prefixed JSON
+                  └──────┬──────┘
+                         v
+                  oxidepress-core hooks and shortcodes
+                  wp_head / wp_footer echo appended to the theme HTML
 ```
 
-## Crate Map
+## Crate map
 
 | Crate | Role |
 |-------|------|
-| `rustpress-server` | HTTP server, routing, middleware, static files |
-| `rustpress-db` | Database entities (SeaORM), wp_options API |
-| `rustpress-core` | Shared types, formatting (wpautop, shortcodes) |
-| `rustpress-query` | WP_Query-compatible query builder |
-| `rustpress-themes` | Tera template rendering, template tags |
-| `rustpress-api` | WordPress REST API v2 endpoints |
-| `rustpress-admin` | Admin dashboard backend |
-| `rustpress-auth` | Authentication, sessions, JWT, RBAC |
-| `rustpress-plugins` | Plugin loading (Rust-native + WASM) |
-| `rustpress-cache` | Moka-based caching layer |
-| `rustpress-cron` | Scheduled tasks (wp-cron equivalent) |
-| `rustpress-migrate` | Database migration tools |
-| `rustpress-i18n` | Internationalization |
-| `rustpress-blocks` | Gutenberg block parsing |
-| `rustpress-e2e` | End-to-end visual comparison tests |
-| `rustpress-cli` | CLI tool |
+| `oxidepress-server` | HTTP server. Binary name `oxidepress` |
+| `oxidepress-cli` | Command-line binary `oxidepress-cli` |
+| `oxidepress-core` | Shared types, hooks, shortcodes |
+| `oxidepress-db` | SeaORM entities and the options API |
+| `oxidepress-query` | Query builder |
+| `oxidepress-themes` | Tera themes and template tags. PHP themes do not run |
+| `oxidepress-api` | WordPress-style REST endpoints |
+| `oxidepress-admin` | Admin routes, including plugin activate and deactivate |
+| `oxidepress-auth` | Sessions, passwords, roles |
+| `oxidepress-plugins` | Plugin registry. Discovery of manifests, WASM files, and PHP headers |
+| `oxidepress-php` | The PHP CLI worker. This is the drop-in runtime |
+| `oxidepress-rustify` | Parser that emits a Rust skeleton. Not the runtime |
+| `oxidepress-cache` | Cache |
+| `oxidepress-cron` | Scheduled tasks |
+| `oxidepress-migrate` | Schema migration against the WordPress tables |
+| `oxidepress-i18n` | Translations |
+| `oxidepress-blocks` | Block rendering and the REST block catalog |
+| `oxidepress-e2e` | End-to-end tests |
+| `oxidepress-seo` | Native screen for stored SEO rows |
+| `oxidepress-fields` | Native screen for stored field groups |
+| `oxidepress-forms` | Native screen for stored contact forms |
+| `oxidepress-security` | Native screen for stored firewall and login rows |
+| `oxidepress-commerce` | Native screen for stored shop rows |
+| `oxidepress-multisite` | Present in the workspace. The single-site plan does not turn multisite on |
 
-### Plugin Crates
+The five native screens read and write the same kinds of rows as Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce. They are not a claim that those WordPress.org plugins are fully reimplemented.
 
-| Crate | WordPress Equivalent |
-|-------|---------------------|
-| `rustpress-commerce` | WooCommerce |
-| `rustpress-seo` | Yoast SEO |
-| `rustpress-forms` | Contact Form 7 |
-| `rustpress-fields` | Advanced Custom Fields |
-| `rustpress-security` | Wordfence |
-| `rustpress-multisite` | WordPress Multisite |
+## PHP worker
 
-## Key Design Decisions
+`oxidepress-php` is one long-lived system `php` process. Rust speaks length-prefixed JSON. Hooks and shortcodes attach to `oxidepress-core`. Startup spawns that process only when an active plugin is `PluginType::Php`. The program is `OXIDEPRESS_PHP` or `php` on `PATH`. If `php` is missing, the site still boots and those plugins are marked Error.
 
-### SKIP_MIGRATIONS Mode
-RustPress can share WordPress's existing database directly. When `SKIP_MIGRATIONS=true`, it reads from the same `wp_posts`, `wp_options`, etc. tables that WordPress uses.
+`ABSPATH` is currently the plugins directory plus a slash. That is wrong for a real WordPress root. Post types, admin menus, and script and style registrations stay inside the worker. HTTP from the worker is absent. The probe record is [crates/oxidepress-php/REAL-PLUGINS.md](../crates/oxidepress-php/REAL-PLUGINS.md). The decision is [ADR-002](adr/002-php-worker.en.md).
 
-### Template System
-WordPress uses PHP templates; RustPress uses Tera (Jinja2-like). Theme conversion is required — PHP themes do not run directly. The `templates/` directory contains Tera templates organized by theme.
+Requests for a `.php` file are blocked by middleware in `oxidepress-server`, apart from the routes the server itself handles. The worker is a separate process. It is not a request uploading a `.php` file into the web root.
 
-### Plugin System
-Plugins are Rust-native or WASM. PHP plugins are not supported directly. A separate conversion service (`rustpress-convert`) provides AI-powered PHP-to-Rust plugin conversion.
+## Names that stay
 
-### Authentication
-- **Sessions**: UUID-based session cookies (HttpOnly, SameSite=Lax)
-- **API**: JWT tokens (built-in, no plugin required)
-- **Passwords**: WordPress-compatible phpass verification + argon2 for new passwords
+- Session cookie `rustpress_session`, and `wp_options` keys `_rustpress_session_`.
+- Tables `rustpress_sessions`, `rustpress_cache`, `rustpress_migrations`.
+- Template key `rustpress_version`. Themes still read it.
+- Env vars `RUSTPRESS_HOST`, `RUSTPRESS_PORT`, `RUSTPRESS_URL`, `RUSTPRESS_UPLOAD_DIR`. The server also reads `DATABASE_URL`, `SITE_URL`, `PLUGINS_DIR`, and `SKIP_MIGRATIONS`.
+- WordPress table names (`wp_posts`, `wp_options`, and the rest).
 
-## Directory Structure
+## Database
+
+`SKIP_MIGRATIONS=true` uses the `wp_*` tables already in `DATABASE_URL`. Schema drift is `gaps/schema.json`, from `pwsh -File tools/wp-gap.ps1`, compared with `oxidepress-migrate`.
+
+## Directory layout
 
 ```
-RustPress/
-├── crates/              # All Rust crates
-│   ├── rustpress-server/    # Main binary
-│   └── ...
-├── templates/           # Tera templates
-│   └── admin/           # Admin panel templates
-├── themes/              # Theme assets and templates
-│   └── twentytwentyfive/
-├── static/              # Static files (CSS, JS, images)
-├── docs/                # Documentation
-│   ├── instructions/    # Developer instruction docs (#01-#09)
+OxidePress/
+├── crates/              # oxidepress-* crates
+├── templates/           # Tera templates, including admin
+├── themes/              # Tera theme assets. PHP themes do not run
+├── static/
+├── docs/
 │   └── adr/             # Architecture Decision Records
-├── reviews/             # QA review results
-└── tests/               # Test scripts
+├── gaps/                # schema.json and blocks.json
+└── wp-content/plugins/  # default PLUGINS_DIR
 ```
 
-## Development Workflow
+## Development workflow
 
-See [docs/instructions/00-workflow.md](instructions/00-workflow.md) for the full PR-based workflow with QA review.
+Read [AGENTS.md](../AGENTS.md), then [CONTRIBUTING.md](../CONTRIBUTING.md). One task, one crate. Find it with `pwsh -File tools/task.ps1 -Keyword <word>`.

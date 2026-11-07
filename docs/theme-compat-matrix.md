@@ -1,5 +1,7 @@
 # WordPress Theme Compatibility Matrix
 
+March 2026 survey, not the current status board. Themes in this tree are Tera themes, and PHP themes do not run. See [docs/compatibility-plan.md](compatibility-plan.md).
+
 Status: **In Progress** | Last updated: 2026-03-07
 
 ## Legend

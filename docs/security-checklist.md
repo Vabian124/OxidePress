@@ -1,6 +1,8 @@
-# RustPress Security Checklist (OWASP Top 10)
+# OxidePress Security Checklist (OWASP Top 10)
 
-Status: **Implemented** | Last updated: 2026-03-07
+Status: **Implemented** | Checklist recorded 2026-03-07. Title and the PHP note below updated 2026-11-07. Boxes were not re-audited on that date.
+
+A request for a `.php` file is blocked by middleware in `oxidepress-server` (the routes the server itself handles, such as `/wp-login.php`, are the exception). That block is a security control. The plugin worker is a separate, explicit `php` process that `oxidepress-php` starts when an active plugin is PHP. It is not a request uploading a `.php` file into the web root.
 
 ## OWASP A01: Broken Access Control
 
@@ -63,10 +65,11 @@ Status: **Implemented** | Last updated: 2026-03-07
 
 ## OWASP A06: Vulnerable and Outdated Components
 
-- [x] `cargo audit` executed — known issues documented:
-  - `rsa` v0.9.10: Timing side-channel (medium, via sqlx-mysql dependency — no fix available)
-  - `wasmtime` v29.0.1: 4 advisories (resource exhaustion, panic, segfault) — upgrade planned
-  - `fxhash` / `paste`: Unmaintained warnings (non-security)
+- [x] `cargo audit` executed — ignores in `.github/workflows/ci.yml`, not new completed work:
+  - `RUSTSEC-2023-0071`: rsa Marvin attack, no upstream fix
+  - `RUSTSEC-2024-0436`: paste unmaintained
+  - `RUSTSEC-2026-0235`: rkyv 0.7 is an optional `rust_decimal` feature this workspace does not enable. This is not an rkyv upgrade
+  - Wasmtime is pinned to `=50.0.1` because the 42 line has no patched release that clears the later advisories
 - [x] Cargo.lock pins all dependency versions
 - [ ] Dependabot/Renovate configuration (CI team responsibility)
 
@@ -112,9 +115,9 @@ Status: **Implemented** | Last updated: 2026-03-07
 
 ## WordPress-Specific Attack Vectors
 
-| Attack | RustPress Defense |
+| Attack | OxidePress Defense |
 |--------|------------------|
-| Plugin vulnerabilities (97% of WP CVEs) | WASM sandbox + Rust type safety |
+| Plugin vulnerabilities (97% of WP CVEs) | Native screens are Rust. A dropped-in PHP plugin runs in one explicit CLI worker. A request that asks the server to serve a `.php` file is blocked |
 | xmlrpc.php abuse | Rate limited, WAF-protected |
 | wp-login.php brute force | Rate limiting (60/min) + auto-lockout |
 | REST API user enumeration | Auth required for user listing, no email/login exposed |
@@ -123,6 +126,8 @@ Status: **Implemented** | Last updated: 2026-03-07
 | Directory traversal | WAF rules + path validation |
 
 ## Test Coverage
+
+Counts in this section are the 2026-03-07 record. They were not recomputed on 2026-11-07.
 
 - **Total workspace tests**: 1098 (all passing, +200 added in beta-sprint-03)
 - **Security crate tests**: 116 (OWASP-focused, +29)
