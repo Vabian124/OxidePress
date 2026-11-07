@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to let saved limits replace the lockout configuration.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 //! Login brute-force protection with auto-lockout.
 
 use chrono::{DateTime, Utc};
@@ -73,6 +76,11 @@ impl LoginProtection {
             config,
             records: HashMap::new(),
         }
+    }
+
+    /// Replace the limits without clearing attempts already recorded.
+    pub fn set_config(&mut self, config: LoginProtectionConfig) {
+        self.config = config;
     }
 
     /// Record a failed login attempt from the given IP for the given username.

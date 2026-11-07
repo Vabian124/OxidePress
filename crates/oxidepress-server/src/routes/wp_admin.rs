@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to edit custom fields on posts and pages.
+// Modified by Vabian124 on 2026-11-07 to lock logins with the saved security settings.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -668,6 +668,61 @@ async fn login_post_dispatch(
     }
 }
 
+async fn saved_login_lockout(state: &AppState) -> Option<(u32, u32)> {
+    let enabled = state
+        .options
+        .get_option("wf_login_sec_enabled")
+        .await
+        .ok()
+        .flatten();
+    if matches!(enabled.as_deref(), Some("0")) {
+        return None;
+    }
+    let max_attempts = state
+        .options
+        .get_option("wf_login_sec_maxFailures")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(5)
+        .clamp(1, 100);
+    let minutes = state
+        .options
+        .get_option("wf_login_sec_lockoutMins")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(30)
+        .clamp(1, 1_440);
+    Some((max_attempts, minutes))
+}
+
+async fn apply_login_lockout(state: &AppState, max_attempts: u32, minutes: u32) {
+    state.login_protection.write().await.set_config(
+        oxidepress_security::login_protection::LoginProtectionConfig {
+            max_attempts,
+            lockout_duration_secs: u64::from(minutes) * 60,
+            attempt_window_secs: u64::from(minutes) * 60,
+        },
+    );
+}
+
+async fn record_failed_login(state: &AppState, ip: &str, username: &str) -> bool {
+    let mut protection = state.login_protection.write().await;
+    protection.record_failed_attempt(ip, username);
+    protection.is_locked_out(ip)
+}
+
+fn locked_login_response(minutes: u32) -> Response {
+    (
+        StatusCode::TOO_MANY_REQUESTS,
+        format!("Too many login attempts. Please try again in {minutes} minutes."),
+    )
+        .into_response()
+}
+
 // --- Login ---
 
 async fn login_submit(
@@ -682,18 +737,20 @@ async fn login_submit(
         .and_then(|v| v.to_str().ok())
         .map(|s| s.to_string());
 
-    // Parse client IP for rate limiting (atomic check via check_and_record on failure paths)
     let parsed_ip: std::net::IpAddr = client_ip
         .parse()
         .unwrap_or(std::net::IpAddr::V4(std::net::Ipv4Addr::new(0, 0, 0, 0)));
-    // Fast-path: skip credential checks for already-locked IPs.
-    // The authoritative atomic check happens in check_and_record() on failure paths.
-    if state.login_tracker.is_locked(&parsed_ip) {
-        return (
-            StatusCode::TOO_MANY_REQUESTS,
-            "Too many login attempts. Please try again in 15 minutes.",
-        )
-            .into_response();
+    let lockout = saved_login_lockout(&state).await;
+    if let Some((max, minutes)) = lockout {
+        apply_login_lockout(&state, max, minutes).await;
+        if state
+            .login_protection
+            .read()
+            .await
+            .is_locked_out(&client_ip)
+        {
+            return locked_login_response(minutes);
+        }
     }
 
     // Find user
@@ -711,13 +768,10 @@ async fn login_submit(
                 &form.username,
                 user_agent.as_deref(),
             );
-            // Atomically record failure and check lockout
-            if state.login_tracker.check_and_record(parsed_ip).is_err() {
-                return (
-                    StatusCode::TOO_MANY_REQUESTS,
-                    "Too many login attempts. Please try again in 15 minutes.",
-                )
-                    .into_response();
+            if let Some((_, minutes)) = lockout {
+                if record_failed_login(&state, &client_ip, &form.username).await {
+                    return locked_login_response(minutes);
+                }
             }
             let mut ctx = tera::Context::new();
             let site_name = state.options.get_blogname().await.unwrap_or_default();
@@ -738,13 +792,10 @@ async fn login_submit(
             &form.username,
             user_agent.as_deref(),
         );
-        // Atomically record failure and check lockout
-        if state.login_tracker.check_and_record(parsed_ip).is_err() {
-            return (
-                StatusCode::TOO_MANY_REQUESTS,
-                "Too many login attempts. Please try again in 15 minutes.",
-            )
-                .into_response();
+        if let Some((_, minutes)) = lockout {
+            if record_failed_login(&state, &client_ip, &form.username).await {
+                return locked_login_response(minutes);
+            }
         }
         let mut ctx = tera::Context::new();
         let site_name = state.options.get_blogname().await.unwrap_or_default();
@@ -794,7 +845,13 @@ async fn login_submit(
         None => session.id.clone(), // fallback: use original if regeneration fails
     };
 
-    // Clear rate limiter on successful login
+    if lockout.is_some() {
+        state
+            .login_protection
+            .write()
+            .await
+            .record_successful_login(&client_ip, &user.user_login);
+    }
     state.login_tracker.clear(&parsed_ip);
 
     // Log successful login
