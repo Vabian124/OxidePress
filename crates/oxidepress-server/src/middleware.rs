@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and skip WAF on theme and wp-includes assets.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress, skip WAF on theme assets, let wp-admin routes through, and recognize shop managers.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -145,6 +145,7 @@ fn extract_role_from_serialized(serialized: &str) -> Option<String> {
     // Quick regex-free approach: split on `"` and check known role names.
     let known = [
         "administrator",
+        "shop_manager",
         "editor",
         "author",
         "contributor",
@@ -517,16 +518,9 @@ pub async fn block_sensitive_files(request: Request, next: Next) -> Response {
         || path.ends_with(".log")
         || path.ends_with(".php")
     {
-        // Allow specific PHP-like routes that are actually Axum handlers
-        let allowed_php = [
-            "/wp-login.php",
-            "/xmlrpc.php",
-            "/wp-admin/admin-seo.php",
-            "/wp-admin/admin-acf.php",
-            "/wp-admin/admin-cf7.php",
-            "/wp-admin/admin-security.php",
-        ];
-        if !allowed_php.contains(&path.as_str()) {
+        // Admin screens and a few public endpoints are Axum handlers, not files.
+        // wp-config.php and any other .php path stay blocked.
+        if !php_route_is_served(&path) {
             return (StatusCode::NOT_FOUND, "").into_response();
         }
     }
@@ -701,6 +695,21 @@ pub fn extract_client_ip(request: &Request) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// `.php` paths this server handles itself.
+///
+/// Everything else that ends in `.php` is treated as a file that must not be served.
+fn php_route_is_served(path: &str) -> bool {
+    path.starts_with("/wp-admin/")
+        || matches!(
+            path,
+            "/wp-login.php"
+                | "/xmlrpc.php"
+                | "/wp-cron.php"
+                | "/wp-comments-post.php"
+                | "/wp-register.php"
+        )
+}
+
 /// Paths whose requests are not WAF-scanned.
 ///
 /// Theme stylesheets, theme images, and `wp-includes` files are build artifacts.
@@ -731,6 +740,19 @@ mod tests {
         assert!(waf_exempt_path("/static/app.css"));
         assert!(waf_exempt_path("/wp-content/uploads/2026/11/photo.png"));
         assert!(waf_exempt_path("/favicon.ico"));
+    }
+
+    #[test]
+    fn test_php_routes_reach_admin_handlers() {
+        assert!(php_route_is_served("/wp-admin/index.php"));
+        assert!(php_route_is_served("/wp-admin/plugins.php"));
+        assert!(php_route_is_served("/wp-login.php"));
+        assert!(php_route_is_served("/wp-cron.php"));
+        assert!(!php_route_is_served("/wp-config.php"));
+        assert!(!php_route_is_served(
+            "/wp-content/plugins/example/plugin.php"
+        ));
+        assert!(!php_route_is_served("/readme.php"));
     }
 
     #[test]
