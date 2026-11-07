@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and accept a product picture URL.
+// Modified by Vabian124 on 2026-11-07 to reduce stock after a sale.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! WooCommerce compatibility layer.
@@ -229,6 +229,19 @@ impl WooProductData {
                 .cloned()
                 .unwrap_or_else(|| "no".to_string()),
         }
+    }
+
+    /// Stock left after selling `quantity`, and the matching stock status.
+    ///
+    /// Products that are not tracking stock are left unchanged.
+    pub fn after_sale(&self, quantity: i64) -> Option<(i64, &'static str)> {
+        if !self.manage_stock {
+            return None;
+        }
+        let current = self.stock_quantity.unwrap_or(0);
+        let next = current.saturating_sub(quantity.max(0));
+        let status = if next > 0 { "instock" } else { "outofstock" };
+        Some((next, status))
     }
 
     /// Convert to wp_postmeta key-value pairs for writing.
@@ -968,5 +981,19 @@ mod tests {
         assert!(product_keys::ALL.contains(&"_price"));
         assert!(product_keys::ALL.contains(&"_sku"));
         assert!(product_keys::ALL.contains(&"_stock_status"));
+    }
+
+    #[test]
+    fn sale_reduces_tracked_stock() {
+        let mut meta = HashMap::new();
+        meta.insert("_stock".into(), "12".into());
+        meta.insert("_manage_stock".into(), "yes".into());
+        let product = WooProductData::from_post_and_meta(2, "Mug", "mug", "", "", &meta);
+        assert_eq!(product.after_sale(1), Some((11, "instock")));
+        assert_eq!(product.after_sale(12), Some((0, "outofstock")));
+
+        let untracked =
+            WooProductData::from_post_and_meta(3, "Mug", "mug", "", "", &HashMap::new());
+        assert_eq!(untracked.after_sale(1), None);
     }
 }
