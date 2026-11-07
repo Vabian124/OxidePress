@@ -87,8 +87,8 @@
                         <td>
                             <div id="field-list">
                                 <div class="field-row" style="display:flex;gap:0.5rem;margin-bottom:0.5rem">
-                                    <input type="text" name="field_label[]" placeholder="Label" class="regular-text" style="flex:1">
-                                    <select name="field_type[]" style="width:120px">
+                                    <input type="text" name="field_label" placeholder="Label" class="regular-text" style="flex:1">
+                                    <select name="field_type" style="width:120px">
                                         <option value="text">Text</option>
                                         <option value="textarea">Textarea</option>
                                         <option value="number">Number</option>
@@ -138,8 +138,8 @@
             var row = document.createElement('div');
             row.className = 'field-row';
             row.style = 'display:flex;gap:0.5rem;margin-bottom:0.5rem';
-            row.innerHTML = '<input type="text" name="field_label[]" placeholder="Label" class="regular-text" style="flex:1">' +
-                '<select name="field_type[]" style="width:120px">' +
+            row.innerHTML = '<input type="text" name="field_label" placeholder="Label" class="regular-text" style="flex:1">' +
+                '<select name="field_type" style="width:120px">' +
                 '<option value="text">Text</option><option value="textarea">Textarea</option>' +
                 '<option value="number">Number</option><option value="email">Email</option>' +
                 '<option value="url">URL</option><option value="image">Image</option>' +

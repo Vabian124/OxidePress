@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to render the SEO, fields, forms, and security screens.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -75,41 +75,22 @@ pub fn routes(state: Arc<AppState>) -> Router {
 
 // --- Shared helpers ---
 
-async fn admin_context(state: &AppState, session: &Session) -> tera::Context {
-    // Delegate to the shared admin_context from wp_admin
-    // We build a minimal context here since we can't call the private function
-    let mut ctx = tera::Context::new();
-    let site_name = state.options.get_blogname().await.unwrap_or_default();
-    ctx.insert("site_name", &site_name);
-    ctx.insert("site_url", &state.site_url);
-    ctx.insert(
-        "current_user",
-        &serde_json::json!({
-            "login": session.login,
-            "role": &session.role,
-            "user_id": session.user_id,
-        }),
-    );
-    // Admin pages always have full capabilities
-    ctx.insert("can_manage_options", &true);
-    ctx.insert("can_list_users", &true);
-    ctx.insert("can_edit_others_posts", &true);
-    ctx.insert("can_moderate_comments", &true);
-    ctx.insert("can_manage_categories", &true);
-    ctx.insert("can_upload_files", &true);
-    ctx.insert("can_edit_posts", &true);
-    ctx.insert("can_edit_pages", &true);
-    ctx.insert("can_edit_theme_options", &true);
-    ctx.insert("can_activate_plugins", &true);
-    ctx
-}
-
 fn render_admin(state: &AppState, template: &str, context: &tera::Context) -> Html<String> {
     match state.admin_tera.render(template, context) {
         Ok(html) => Html(html),
-        Err(e) => {
-            tracing::error!("Plugin admin template error: {}", e);
-            Html(format!("<h1>Admin Template Error</h1><pre>{e}</pre>"))
+        Err(error) => {
+            let mut detail = error.to_string();
+            let mut source = std::error::Error::source(&error);
+            while let Some(inner) = source {
+                detail.push_str(": ");
+                detail.push_str(&inner.to_string());
+                source = inner.source();
+            }
+            tracing::error!("Plugin admin template error: {detail}");
+            Html(format!(
+                "<h1>Admin Template Error</h1><pre>{}</pre>",
+                detail
+            ))
         }
     }
 }
@@ -655,8 +636,9 @@ async fn seo_settings_page(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "seo");
+    ctx.insert("saved", &false);
 
     let sep = state
         .options
@@ -804,17 +786,60 @@ async fn seo_settings_save(
 struct AcfFieldGroupForm {
     fg_title: String,
     fg_location: Option<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "field_label[]",
+        deserialize_with = "one_or_many_strings"
+    )]
     field_label: Vec<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "field_type[]",
+        deserialize_with = "one_or_many_strings"
+    )]
     field_type: Vec<String>,
+}
+
+fn one_or_many_strings<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    struct OneOrMany;
+    impl<'de> serde::de::Visitor<'de> for OneOrMany {
+        type Value = Vec<String>;
+
+        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+            formatter.write_str("a string or a list of strings")
+        }
+
+        fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+            Ok(vec![value.to_string()])
+        }
+
+        fn visit_string<E: serde::de::Error>(self, value: String) -> Result<Self::Value, E> {
+            Ok(vec![value])
+        }
+
+        fn visit_seq<A: serde::de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Self::Value, A::Error> {
+            let mut values = Vec::new();
+            while let Some(value) = seq.next_element::<String>()? {
+                values.push(value);
+            }
+            Ok(values)
+        }
+    }
+
+    deserializer.deserialize_any(OneOrMany)
 }
 
 async fn acf_fields_page(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "acf");
 
     let registry = state.field_registry.read().await;
@@ -859,12 +884,17 @@ async fn acf_fields_page(
             .await
             .unwrap_or(0);
 
+        let location = queries::get_post_meta_value(&state.db, post.id, "location_rules")
+            .await
+            .ok()
+            .flatten();
+        let location_rules: Vec<String> = location.into_iter().collect();
         all_groups.push(serde_json::json!({
             "id": post.id,
             "key": post.post_name,
             "title": post.post_title,
             "field_count": field_count,
-            "location_rules": Vec::<String>::new(),
+            "location_rules": location_rules,
             "active": post.post_status == "publish",
         }));
     }
@@ -970,7 +1000,7 @@ async fn cf7_forms_page(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "cf7");
 
     let cf7_posts = wp_posts::Entity::find()
@@ -1067,8 +1097,9 @@ async fn security_dashboard_page(
     State(state): State<Arc<AppState>>,
     Extension(session): Extension<Session>,
 ) -> Html<String> {
-    let mut ctx = admin_context(&state, &session).await;
+    let mut ctx = super::wp_admin::admin_context(&state, &session).await;
     ctx.insert("active_page", "security");
+    ctx.insert("saved", &false);
 
     let waf = state.waf.read().await;
     let waf_rule_count = waf.rule_count();
