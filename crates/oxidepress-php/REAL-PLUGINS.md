@@ -38,8 +38,10 @@ The worker now provides the path, URL, locale, translation, query-arg, transient
 | Health Check | 1.7.1 | Loaded (4 actions, 1 filter). Every probed hook returned, including `admin_menu`. Its `compat.php` still warns because it `include`s `ABSPATH . 'wp-includes/version.php'`, and this process is not a WordPress tree. |
 | Contact Form 7 | 6.2.4.1 | Loaded (18 actions, 8 filters). `register_post_type()` and the upload-directory helpers returned. Stopped inside `plugins_loaded` when `includes/filesystem.php` `require_once`s `ABSPATH . 'wp-admin/includes/file.php'` (and the `WP_Filesystem_*` classes next to it). That is WordPress core's filesystem API, which this worker does not ship. |
 
-## What this does not mean
+## On the server
 
-The live OxidePress server still does not scan `wp-content/plugins` for `.php` files, and `wp_head` output from an action is not inserted into the theme yet. A plugin that boots here has registered its hooks. Post types and admin menu slugs are recorded in the worker only. HTTP calls such as Akismet's spam API, and the WordPress filesystem classes Contact Form 7 loads, are still absent.
+The server scans the configured plugins directory for the same `Plugin Name` headers. PHP plugins are registered under the WordPress basename (`hello-dolly/hello.php`) and can also be activated by the display name. At startup, every active PHP plugin is included in one worker. Echo from `wp_head` and `wp_footer` is appended to the theme HTML. If `php` is missing, the site still boots and those plugins are marked as errors.
+
+Removing one plugin needs a process restart: the hook registry cannot drop a single callback. The admin activate route cannot take a basename that contains a slash, so it still stores the display name. Post types and admin menu slugs are recorded in the worker only. HTTP calls such as Akismet's spam API, and the WordPress filesystem classes Contact Form 7 loads, are still absent.
 
 `fixtures/boot-surface` locks the helpers the passing plugins rely on: widget subclassing, `__return_false`, `plugins_url`, `path_join`, `get_user_locale`, `get_site_option`, `add_query_arg`, `register_post_type('boot_form')`, `add_submenu_page`, and an escaped `admin_notices` echo.

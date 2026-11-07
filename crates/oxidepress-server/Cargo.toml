@@ -22,6 +22,7 @@ oxidepress-themes = { workspace = true }
 oxidepress-api = { workspace = true }
 oxidepress-admin = { workspace = true }
 oxidepress-plugins = { workspace = true }
+oxidepress-php = { workspace = true }
 oxidepress-cache = { workspace = true }
 oxidepress-cron = { workspace = true }
 oxidepress-migrate = { workspace = true }

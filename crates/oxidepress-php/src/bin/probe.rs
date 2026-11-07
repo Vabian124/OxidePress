@@ -63,7 +63,7 @@ fn main() -> ExitCode {
         ])),
     });
     let php = env::var_os("OXIDEPRESS_PHP").unwrap_or_else(|| "php".into());
-    let runtime = match PhpRuntime::spawn_php(php, Some(&dir), host) {
+    let runtime = match PhpRuntime::spawn_php(php, Some(&dir), None, host) {
         Ok(runtime) => runtime,
         Err(err) => {
             eprintln!("php worker failed to start: {err}");

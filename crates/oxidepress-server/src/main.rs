@@ -31,6 +31,7 @@ use oxidepress_cron::CronManager;
 use oxidepress_db::{connection, options::OptionsManager};
 use oxidepress_fields::{FieldGroupRegistry, FieldStorage};
 use oxidepress_forms::SubmissionStore;
+use oxidepress_php::{DiscoveredPlugin, PhpHost, PhpRuntime};
 use oxidepress_plugins::{PluginLoader, PluginRegistry, WasmHost};
 use oxidepress_security::{AuditLog, LoginProtection, RateLimiter, WafEngine};
 
@@ -223,6 +224,16 @@ async fn main() -> Result<()> {
     register_contact_form_shortcode(&shortcodes, contact_forms.clone());
     info!("shortcode registry initialized with built-in shortcodes");
 
+    let php_runtime = load_php_plugins(
+        &config.plugins_dir,
+        &site_url,
+        &options,
+        &plugin_registry,
+        &hooks,
+        &shortcodes,
+    )
+    .await;
+
     // Initialize cron system (before AppState so it can be stored in state)
     let cron = Arc::new(CronManager::new());
 
@@ -389,6 +400,7 @@ async fn main() -> Result<()> {
         login_tracker: oxidepress_auth::LoginAttemptTracker::new(),
         audit_log,
         wasm_host,
+        php_runtime,
         multisite_resolver,
         multisite_network,
     });
@@ -623,6 +635,109 @@ async fn main() -> Result<()> {
     .await?;
 
     Ok(())
+}
+
+async fn load_php_plugins(
+    plugins_dir: &str,
+    site_url: &str,
+    options: &oxidepress_db::options::OptionsManager,
+    registry: &oxidepress_plugins::PluginRegistry,
+    hooks: &HookRegistry,
+    shortcodes: &oxidepress_core::shortcode::ShortcodeRegistry,
+) -> Option<PhpRuntime> {
+    let active: Vec<_> = registry
+        .active_plugins()
+        .await
+        .into_iter()
+        .filter(|entry| entry.meta.plugin_type == oxidepress_plugins::registry::PluginType::Php)
+        .collect();
+    if active.is_empty() {
+        return None;
+    }
+
+    let host = Arc::new(OptionHost {
+        options: options.clone(),
+    });
+    let php = std::env::var_os("OXIDEPRESS_PHP")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::PathBuf::from("php"));
+    let runtime = match PhpRuntime::spawn_php(
+        php,
+        Some(std::path::Path::new(plugins_dir)),
+        Some(site_url),
+        host,
+    ) {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            tracing::warn!(error = %error, "PHP plugin worker did not start");
+            for entry in &active {
+                if let Err(mark) = registry
+                    .mark_error(&entry.meta.basename, error.to_string())
+                    .await
+                {
+                    tracing::warn!(error = %mark, "failed to record PHP plugin error");
+                }
+            }
+            return None;
+        }
+    };
+
+    for entry in active {
+        let discovered = DiscoveredPlugin {
+            name: entry.meta.name.clone(),
+            version: entry.meta.version.clone(),
+            description: entry.meta.description.clone(),
+            author: entry.meta.author.clone(),
+            file_path: std::path::PathBuf::from(&entry.file_path),
+            basename: entry.meta.basename.clone(),
+        };
+        match runtime.load(&discovered) {
+            Ok(loaded) => runtime.attach(hooks, shortcodes, &loaded),
+            Err(error) => {
+                tracing::warn!(
+                    plugin = %entry.meta.basename,
+                    error = %error,
+                    "PHP plugin failed to load"
+                );
+                if let Err(mark) = registry
+                    .mark_error(&entry.meta.basename, error.to_string())
+                    .await
+                {
+                    tracing::warn!(error = %mark, "failed to record PHP plugin error");
+                }
+            }
+        }
+    }
+    Some(runtime)
+}
+
+struct OptionHost {
+    options: oxidepress_db::options::OptionsManager,
+}
+
+impl PhpHost for OptionHost {
+    fn get_option(&self, name: &str) -> Option<String> {
+        let options = self.options.clone();
+        let name = name.to_string();
+        block_on_host(async move { options.get_option(&name).await.ok().flatten() })
+    }
+
+    fn update_option(&self, name: &str, value: &str) -> bool {
+        let options = self.options.clone();
+        let name = name.to_string();
+        let value = value.to_string();
+        block_on_host(async move { options.update_option(&name, &value).await.is_ok() })
+    }
+
+    fn delete_option(&self, name: &str) -> bool {
+        let options = self.options.clone();
+        let name = name.to_string();
+        block_on_host(async move { options.delete_option(&name).await.unwrap_or(false) })
+    }
+}
+
+fn block_on_host<T>(future: impl std::future::Future<Output = T>) -> T {
+    tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(future))
 }
 
 async fn restore_active_plugins(

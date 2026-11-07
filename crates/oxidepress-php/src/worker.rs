@@ -91,19 +91,22 @@ struct Started {
 impl PhpRuntime {
     /// Spawn `php` from `OXIDEPRESS_PHP` or `PATH`.
     pub fn spawn(host: Arc<dyn PhpHost>) -> Result<Self, PhpError> {
-        Self::spawn_php(php_program(), None, host)
+        Self::spawn_php(php_program(), None, None, host)
     }
 
     /// Spawn a PHP binary and tell the worker which directory plugins live in.
+    ///
+    /// `site_url` becomes `OXIDEPRESS_SITE_URL`. `None` keeps `http://localhost`.
     pub fn spawn_php(
         php: impl AsRef<Path>,
         plugins_dir: Option<&Path>,
+        site_url: Option<&str>,
         host: Arc<dyn PhpHost>,
     ) -> Result<Self, PhpError> {
         let config = WorkerConfig {
             php: php.as_ref().to_path_buf(),
             plugins_dir: plugins_dir.map(Path::to_path_buf),
-            site_url: "http://localhost".to_string(),
+            site_url: site_url.unwrap_or("http://localhost").to_string(),
         };
         let started = start_process(&config)?;
         Ok(Self::from_started(started, Some(config), host))
@@ -809,7 +812,7 @@ mod tests {
         let host = Arc::new(MemHost::new());
         host.set("notice_suffix", "!");
         let runtime =
-            PhpRuntime::spawn_php(php_program(), Some(&fixtures()), host.clone()).unwrap();
+            PhpRuntime::spawn_php(php_program(), Some(&fixtures()), None, host.clone()).unwrap();
         let found = discover(&fixtures()).unwrap();
         let plugin = found
             .iter()
@@ -866,7 +869,7 @@ mod tests {
         }
 
         let host = Arc::new(MemHost::new());
-        let runtime = PhpRuntime::spawn_php(php_program(), Some(&fixtures()), host).unwrap();
+        let runtime = PhpRuntime::spawn_php(php_program(), Some(&fixtures()), None, host).unwrap();
         let found = discover(&fixtures()).unwrap();
         let plugin = found
             .iter()
@@ -885,7 +888,7 @@ mod tests {
 
         let host = Arc::new(MemHost::new());
         let runtime =
-            PhpRuntime::spawn_php(php_program(), Some(&fixtures()), host.clone()).unwrap();
+            PhpRuntime::spawn_php(php_program(), Some(&fixtures()), None, host.clone()).unwrap();
         let found = discover(&fixtures()).unwrap();
         let plugin = found
             .iter()

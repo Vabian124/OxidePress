@@ -18,6 +18,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(feature, values("wasm-runt
 
 [dependencies]
 oxidepress-core = { workspace = true }
+oxidepress-php = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

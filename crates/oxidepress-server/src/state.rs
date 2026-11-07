@@ -65,6 +65,9 @@ pub struct AppState {
     pub audit_log: Arc<AuditLog>,
     // WASM plugin host
     pub wasm_host: Arc<RwLock<WasmHost>>,
+    /// Long-lived PHP worker for dropped-in plugins. Absent when none are active
+    /// or when `php` is not installed.
+    pub php_runtime: Option<oxidepress_php::PhpRuntime>,
     // Multisite support
     pub multisite_resolver: Option<Arc<oxidepress_multisite::SiteResolver>>,
     pub multisite_network: Option<Arc<RwLock<oxidepress_multisite::NetworkManager>>>,

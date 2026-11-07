@@ -3744,6 +3744,7 @@ async fn plugins_list(
             let plugin_type = match &p.meta.plugin_type {
                 oxidepress_plugins::registry::PluginType::Native => "Native",
                 oxidepress_plugins::registry::PluginType::Wasm => "Wasm",
+                oxidepress_plugins::registry::PluginType::Php => "Php",
             };
             serde_json::json!({
                 "name": p.meta.name,

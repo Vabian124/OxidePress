@@ -131,13 +131,11 @@ async fn build_base_context(state: &AppState) -> tera::Context {
     let engine = state.theme_engine.read().await;
     let mut ctx = engine.base_context(&site_name, &site_desc, &state.site_url);
 
-    // Generate wp_head() and wp_footer() standard outputs
-    let wp_head_html = oxidepress_themes::wp_head::wp_head(&state.site_url, &site_name, &site_desc);
-    let wp_footer_html = oxidepress_themes::wp_head::wp_footer(&state.site_url);
-    ctx.insert("wp_head", &wp_head_html);
-    ctx.insert("wp_footer", &wp_footer_html);
+    // Generate wp_head() and wp_footer() standard outputs, then let plugins append.
+    let mut wp_head_html =
+        oxidepress_themes::wp_head::wp_head(&state.site_url, &site_name, &site_desc);
+    let mut wp_footer_html = oxidepress_themes::wp_head::wp_footer(&state.site_url);
 
-    // Fire wp_head and wp_footer action hooks so plugins can add output
     state
         .hooks
         .do_action("wp_head", &serde_json::json!({"site_url": &state.site_url}));
@@ -145,6 +143,12 @@ async fn build_base_context(state: &AppState) -> tera::Context {
         "wp_footer",
         &serde_json::json!({"site_url": &state.site_url}),
     );
+    if let Some(runtime) = &state.php_runtime {
+        wp_head_html.push_str(&runtime.take_output("wp_head"));
+        wp_footer_html.push_str(&runtime.take_output("wp_footer"));
+    }
+    ctx.insert("wp_head", &wp_head_html);
+    ctx.insert("wp_footer", &wp_footer_html);
 
     // Load navigation menus from WordPress nav_menu system
     let menu_locations = crate::nav_menu::get_menu_locations(&state.options).await;

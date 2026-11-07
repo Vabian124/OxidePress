@@ -119,6 +119,7 @@ mod tests {
                 description: "Welcome note".into(),
                 author: "OxidePress".into(),
                 plugin_type: PluginType::Native,
+                basename: String::new(),
             },
             status: PluginStatus::Inactive,
             file_path: "demo-plugins/hello-oxide".into(),
