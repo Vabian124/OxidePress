@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to supply the current post and site to block renderers.
+// Modified by Vabian124 on 2026-11-07 to give query, page, and navigation blocks their posts.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Values a dynamic block can read while a post or template is rendering.
@@ -7,6 +7,25 @@
 //! without a context keep their previous placeholder text.
 
 use std::cell::RefCell;
+
+#[derive(Clone, Debug, Default)]
+pub struct QueryPost {
+    pub id: u64,
+    pub title: String,
+    pub excerpt: String,
+    pub date: String,
+    pub date_iso: String,
+    pub author: String,
+    pub url: String,
+    pub featured_image_url: String,
+    pub comment_count: i64,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct NavLink {
+    pub label: String,
+    pub url: String,
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct RenderContext {
@@ -23,6 +42,11 @@ pub struct RenderContext {
     pub featured_image_url: String,
     pub comment_count: i64,
     pub content_words: u32,
+    pub query_posts: Vec<QueryPost>,
+    pub query_total: usize,
+    pub pages: Vec<NavLink>,
+    pub previous_url: String,
+    pub next_url: String,
 }
 
 std::thread_local! {

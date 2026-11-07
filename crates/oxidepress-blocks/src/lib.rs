@@ -6,7 +6,7 @@ pub mod registry;
 pub mod renderer;
 pub mod serializer;
 
-pub use context::{with_render_context, RenderContext};
+pub use context::{with_render_context, NavLink, QueryPost, RenderContext};
 
 pub use parser::{parse_blocks, Block};
 pub use registry::{BlockCategory, BlockRegistry, BlockType, RenderCallback};

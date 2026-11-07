@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-07 to repeat a query template once per post.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use std::sync::Arc;
 
 use crate::parser::Block;
@@ -911,13 +914,49 @@ fn render_post_terms() -> RenderCallback {
     })
 }
 
+fn render_query_inner(block: &Block) -> String {
+    if block.inner_blocks.is_empty() {
+        block.inner_html.clone()
+    } else {
+        render_inner_blocks_simple(&block.inner_blocks)
+    }
+}
+
 fn render_query() -> RenderCallback {
     Arc::new(|block: &Block| {
         let class = build_class("wp-block-query", block);
-        let inner = if block.inner_blocks.is_empty() {
-            block.inner_html.clone()
+        let ctx = crate::context::current();
+        let per_page = block
+            .attrs
+            .get("query")
+            .and_then(|query| query.get("perPage"))
+            .and_then(|value| value.as_u64())
+            .unwrap_or(10)
+            .clamp(1, 100) as usize;
+        let posts: Vec<_> = ctx.query_posts.iter().take(per_page).cloned().collect();
+        let total = posts.len();
+        let inner = if posts.is_empty() {
+            render_query_inner(block)
         } else {
-            render_inner_blocks_simple(&block.inner_blocks)
+            let mut html = String::new();
+            for post in posts {
+                let mut next = ctx.clone();
+                next.post_id = post.id;
+                next.post_title = post.title;
+                next.post_excerpt = post.excerpt;
+                next.post_date = post.date;
+                next.post_date_iso = post.date_iso;
+                next.post_author = post.author;
+                next.post_url = post.url;
+                next.featured_image_url = post.featured_image_url;
+                next.comment_count = post.comment_count;
+                next.query_total = total;
+                next.query_posts.clear();
+                html.push_str(&crate::context::with_render_context(&next, || {
+                    render_query_inner(block)
+                }));
+            }
+            html
         };
         format!("<div class=\"{class}\">{inner}</div>")
     })
@@ -1335,5 +1374,60 @@ mod tests {
         assert!(html.contains("Find"));
         assert!(html.contains("Go"));
         assert!(html.contains("wp-block-search"));
+    }
+
+    #[test]
+    fn query_repeats_its_template_for_each_post() {
+        let blocks = parse_blocks("<!-- wp:query --><!-- wp:post-title {\"isLink\":true} /--><!-- wp:query-total /--><!-- /wp:query -->");
+        let mut registry = BlockRegistry::new();
+        register_core_blocks(&mut registry);
+        let renderer = crate::renderer::BlockRenderer::new(registry);
+        let ctx = crate::RenderContext {
+            query_posts: vec![
+                crate::QueryPost {
+                    title: "One".into(),
+                    url: "/one/".into(),
+                    ..Default::default()
+                },
+                crate::QueryPost {
+                    title: "Two".into(),
+                    url: "/two/".into(),
+                    ..Default::default()
+                },
+            ],
+            ..Default::default()
+        };
+        let html = crate::with_render_context(&ctx, || renderer.render_blocks(&blocks));
+        assert!(html.contains(">One<"), "{html}");
+        assert!(html.contains("href=\"/one/\""));
+        assert!(html.contains(">Two<"));
+        assert!(html.contains("href=\"/two/\""));
+        assert!(html.contains(">2<"));
+    }
+
+    #[test]
+    fn page_list_breadcrumbs_and_navigation_use_the_context() {
+        let blocks = parse_blocks(
+            "<!-- wp:page-list /--><!-- wp:breadcrumbs /--><!-- wp:post-navigation-link {\"type\":\"next\"} /-->",
+        );
+        let mut registry = BlockRegistry::new();
+        register_core_blocks(&mut registry);
+        let renderer = crate::renderer::BlockRenderer::new(registry);
+        let ctx = crate::RenderContext {
+            site_url: "http://127.0.0.1:3000".into(),
+            post_title: "About".into(),
+            post_url: "http://127.0.0.1:3000/about/".into(),
+            pages: vec![crate::NavLink {
+                label: "About".into(),
+                url: "http://127.0.0.1:3000/about/".into(),
+            }],
+            next_url: "http://127.0.0.1:3000/shipping/".into(),
+            ..Default::default()
+        };
+        let html = crate::with_render_context(&ctx, || renderer.render_blocks(&blocks));
+        assert!(html.contains("About"));
+        assert!(html.contains("http://127.0.0.1:3000/about/"));
+        assert!(html.contains("http://127.0.0.1:3000/shipping/"));
+        assert!(!html.contains("href=\"#\""));
     }
 }

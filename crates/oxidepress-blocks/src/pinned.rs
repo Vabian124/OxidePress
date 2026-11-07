@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to register the WordPress 7.1.4 core blocks.
+// Modified by Vabian124 on 2026-11-07 to link page lists, breadcrumbs, and post navigation.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Blocks present in the pinned WordPress `block.json` list and absent from
@@ -320,14 +320,21 @@ fn render_nextpage() -> RenderCallback {
 fn render_page_list() -> RenderCallback {
     Arc::new(|_block: &Block| {
         let ctx = current();
-        let href = context::safe_href(if ctx.site_url.is_empty() {
+        let home = context::safe_href(if ctx.site_url.is_empty() {
             "/"
         } else {
             &ctx.site_url
         });
-        format!(
-            "<ul class=\"wp-block-page-list\"><li class=\"wp-block-pages-list__item\"><a href=\"{href}\">Home</a></li></ul>"
-        )
+        let mut items =
+            format!("<li class=\"wp-block-pages-list__item\"><a href=\"{home}\">Home</a></li>");
+        for page in &ctx.pages {
+            let href = context::safe_href(&page.url);
+            let label = context::escape_html(&page.label);
+            items.push_str(&format!(
+                "<li class=\"wp-block-pages-list__item\"><a href=\"{href}\">{label}</a></li>"
+            ));
+        }
+        format!("<ul class=\"wp-block-page-list\">{items}</ul>")
     })
 }
 
@@ -360,13 +367,18 @@ fn render_comments_link() -> RenderCallback {
 fn render_post_navigation_link() -> RenderCallback {
     Arc::new(|block: &Block| {
         let kind = attr(block, "type");
-        let fallback = if kind == "previous" {
-            "Previous"
+        let ctx = current();
+        let (url, fallback) = if kind == "previous" {
+            (ctx.previous_url.as_str(), "Previous")
         } else {
-            "Next"
+            (ctx.next_url.as_str(), "Next")
         };
+        if url.is_empty() {
+            return String::new();
+        }
         let label = context::shown(attr(block, "label"), fallback);
-        format!("<div class=\"wp-block-post-navigation-link\"><a href=\"#\">{label}</a></div>")
+        let href = context::safe_href(url);
+        format!("<div class=\"wp-block-post-navigation-link\"><a href=\"{href}\">{label}</a></div>")
     })
 }
 
@@ -392,20 +404,41 @@ fn render_page_link(fallback: &'static str) -> RenderCallback {
 }
 
 fn render_query_total() -> RenderCallback {
-    Arc::new(|_block: &Block| "<div class=\"wp-block-query-total\"></div>".to_string())
+    Arc::new(|_block: &Block| {
+        let ctx = current();
+        let count = if ctx.query_total > 0 {
+            ctx.query_total
+        } else {
+            ctx.query_posts.len()
+        };
+        format!("<div class=\"wp-block-query-total\">{count}</div>")
+    })
 }
 
 fn render_breadcrumbs() -> RenderCallback {
     Arc::new(|_block: &Block| {
         let ctx = current();
-        let href = context::safe_href(if ctx.site_url.is_empty() {
+        let home = context::safe_href(if ctx.site_url.is_empty() {
             "/"
         } else {
             &ctx.site_url
         });
-        format!(
-            "<nav class=\"wp-block-breadcrumbs\" aria-label=\"Breadcrumbs\"><a href=\"{href}\">Home</a></nav>"
-        )
+        let mut html = format!(
+            "<nav class=\"wp-block-breadcrumbs\" aria-label=\"Breadcrumbs\"><a href=\"{home}\">Home</a>"
+        );
+        if !ctx.post_title.is_empty() {
+            let href = context::safe_href(if ctx.post_url.is_empty() {
+                "#"
+            } else {
+                &ctx.post_url
+            });
+            let title = context::escape_html(&ctx.post_title);
+            html.push_str(&format!(
+                " <span aria-hidden=\"true\">/</span> <a href=\"{href}\">{title}</a>"
+            ));
+        }
+        html.push_str("</nav>");
+        html
     })
 }
 
