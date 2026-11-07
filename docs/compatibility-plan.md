@@ -12,33 +12,26 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - All 115 core block names from WordPress 7.1.4 are present in the renderer and the REST catalog. `missing_from_renderer` and `missing_from_rest` are empty. `core/query-loop`, `core/row`, and `core/stack` are OxidePress aliases.
 - The local site boots on MySQL 8, serves Twenty Twenty-Five, and the shop, cart, and checkout use that theme. Footer labels that were `href="#"` resolve to published pages.
 - SEO, custom fields, contact forms, and security screens render and store their rows. A shop manager can edit a product and cannot open plugins.
+- The public home page uses a saved `_yoast_wpseo_title-homepage` and `_yoast_wpseo_metadesc-homepage`. The header site name stays the blog name.
+- `core/query` repeats its template for the published posts on the render context. Page lists, breadcrumbs, and post navigation use the pages and permalinks on that context.
+- The SEO sitemap checkboxes are stored and `/sitemap.xml` follows them.
+- A field group whose location is `product` or `all` shows on the product editor and saves as post meta.
+- `[contact-form-7 id="…"]` renders the stored form.
+- An address in `wf_blocked_ips` is refused. `127.0.0.1` and `::1` cannot be added.
+- `GET /wp-json/wp/v2/plugins` returns discovered manifests and their active or inactive state.
+- Appearance → Themes lists the themes on disk and marks the theme the server is serving.
+- Checkout decreases `_stock` and writes `_stock_status` for products that track stock.
+- `/author/{slug}/`, `/category/{slug}/`, and `/tag/{slug}/` query the matching published posts and render the theme archive template.
 
 ## Next, in order
 
-These are the behaviors a visitor or editor still hits. The names exist. The output does not match WordPress yet.
+The named single-site list above is in. These are the next holes a visitor or editor still hits.
 
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Homepage title and meta description | `oxidepress-server` | A saved `_yoast_wpseo_title-homepage` and `_yoast_wpseo_metadesc-homepage` are the public home `<title>` and meta description. The header site name stays the blog name. |
-| 2 | Query loop | `oxidepress-blocks` | `core/query` renders its inner template once per post supplied on the render context, and `core/query-total` reports that count. |
-| 3 | Fill the query | `oxidepress-server` | Rendering a query block loads the published posts for that query and passes them in. |
-| 4 | Page list | `oxidepress-blocks` | `core/page-list` lists the pages on the render context. A context with no pages still shows Home. |
-| 5 | Breadcrumbs | `oxidepress-blocks` | `core/breadcrumbs` shows Home and the current post or page title, linked to its permalink. |
-| 6 | Post navigation | `oxidepress-blocks` | `core/post-navigation-link` uses the previous and next permalinks on the render context. An empty side renders no link. |
-| 7 | Wire navigation context | `oxidepress-server` | Single posts pass previous and next permalinks. Page lists pass published pages. |
-| 8 | Sitemap checkboxes | `oxidepress-server` | The SEO screen stores and reloads include-posts and include-pages, and `/sitemap.xml` follows them. |
-| 9 | Custom field on the editor | `oxidepress-server` | A field group whose location is `product` or `post` shows its fields on that editor and saves them as post meta. |
-| 10 | Contact form shortcode | `oxidepress-forms` | `[contact-form-7 id="…"]` renders the stored `wpcf7_contact_form` content. |
-
-## After that
-
-| Work | Crate | Done when |
-|---|---|---|
-| Blocked addresses | `oxidepress-security` | An address stored in `wf_blocked_ips` is refused on the next request. The server's own address cannot be added. |
-| Plugin list | `oxidepress-api` | `GET /wp-json/wp/v2/plugins` returns the discovered manifests and their active or inactive state. |
-| Themes screen | `oxidepress-server` | Appearance → Themes lists the themes on disk and the active one. |
-| Stock | `oxidepress-commerce` | A completed checkout decreases `_stock` and writes `_stock_status`. |
-| Author, category, and tag archives | `oxidepress-server` | `/author/{slug}/`, `/category/{slug}/`, and `/tag/{slug}/` list the matching published posts. |
+| 1 | Custom fields on posts and pages | `oxidepress-server` | A field group whose location is `post` or `page` shows on that editor and saves as post meta. The product editor already does this. The block editor does not. |
+| 2 | Plugin activation survives restart | `oxidepress-server` | Activating a discovered plugin writes `active_plugins`, and the next boot loads that list. |
+| 3 | Security screen reloads what it saved | `oxidepress-server` | Firewall, rate limit, and login protection checkboxes show the stored options, and a successful save says so. |
 
 ## Not this plan
 
