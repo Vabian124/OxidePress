@@ -1,8 +1,12 @@
+pub mod context;
 pub mod core_blocks;
 pub mod parser;
+pub mod pinned;
 pub mod registry;
 pub mod renderer;
 pub mod serializer;
+
+pub use context::{with_render_context, RenderContext};
 
 pub use parser::{parse_blocks, Block};
 pub use registry::{BlockCategory, BlockRegistry, BlockType, RenderCallback};

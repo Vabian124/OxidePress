@@ -34,7 +34,7 @@ WordPress compatibility is a diff, not a reread. Regenerate it with:
 pwsh -File tools/wp-gap.ps1
 ```
 
-The report is `gaps/schema.json`. It compares the pinned WordPress `schema.php` with `crates/oxidepress-migrate`. Edit that crate from a row in the report. Do not open WordPress source to rediscover the list.
+The report is `gaps/schema.json`. It compares the pinned WordPress `schema.php` with `crates/oxidepress-migrate`. `existing_database_repairs` are the ALTER statements an older database still needs; `CREATE TABLE IF NOT EXISTS` does not apply them. Core blocks are `gaps/blocks.json` from `pwsh -File tools/wp-blocks.ps1`. Edit the named crate from a row in the report. Do not open WordPress source to rediscover the list.
 
 ## Do not read
 

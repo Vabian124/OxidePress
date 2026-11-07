@@ -1,0 +1,710 @@
+{
+  "pin": "7.1.4",
+  "coverage": "Core block.json names under wp-includes/blocks. Renderer names are string literals in oxidepress-blocks. REST names are string literals in oxidepress-api block_types.rs. Aliases such as core/query-loop may appear only on the OxidePress side.",
+  "wordpress_count": 115,
+  "wordpress_blocks": [
+    {
+      "name": "core/accordion",
+      "title": "Accordion",
+      "category": "design",
+      "description": "Displays a foldable layout that groups content in collapsible sections."
+    },
+    {
+      "name": "core/accordion-heading",
+      "title": "Accordion Heading",
+      "category": "design",
+      "description": "Displays a heading that toggles the accordion panel."
+    },
+    {
+      "name": "core/accordion-item",
+      "title": "Accordion Item",
+      "category": "design",
+      "description": "Wraps the heading and panel in one unit."
+    },
+    {
+      "name": "core/accordion-panel",
+      "title": "Accordion Panel",
+      "category": "design",
+      "description": "Contains the hidden or revealed content beneath the heading."
+    },
+    {
+      "name": "core/archives",
+      "title": "Archives",
+      "category": "widgets",
+      "description": "Display a date archive of your posts."
+    },
+    {
+      "name": "core/audio",
+      "title": "Audio",
+      "category": "media",
+      "description": "Embed a simple audio player."
+    },
+    {
+      "name": "core/avatar",
+      "title": "Avatar",
+      "category": "theme",
+      "description": "Add a user’s avatar."
+    },
+    {
+      "name": "core/block",
+      "title": "Pattern",
+      "category": "reusable",
+      "description": "Reuse this design across your site."
+    },
+    {
+      "name": "core/breadcrumbs",
+      "title": "Breadcrumbs",
+      "category": "theme",
+      "description": "Display a breadcrumb trail showing the path to the current page."
+    },
+    {
+      "name": "core/button",
+      "title": "Button",
+      "category": "design",
+      "description": "Prompt visitors to take action with a button-style link."
+    },
+    {
+      "name": "core/buttons",
+      "title": "Buttons",
+      "category": "design",
+      "description": "Prompt visitors to take action with a group of button-style links."
+    },
+    {
+      "name": "core/calendar",
+      "title": "Calendar",
+      "category": "widgets",
+      "description": "A calendar of your site’s posts."
+    },
+    {
+      "name": "core/categories",
+      "title": "Terms List",
+      "category": "widgets",
+      "description": "Display a list of all terms of a given taxonomy."
+    },
+    {
+      "name": "core/code",
+      "title": "Code",
+      "category": "text",
+      "description": "Display code snippets that respect your spacing and tabs."
+    },
+    {
+      "name": "core/column",
+      "title": "Column",
+      "category": "design",
+      "description": "A single column within a columns block."
+    },
+    {
+      "name": "core/columns",
+      "title": "Columns",
+      "category": "design",
+      "description": "Display content in multiple columns, with blocks added to each column."
+    },
+    {
+      "name": "core/comment-author-name",
+      "title": "Comment Author Name",
+      "category": "theme",
+      "description": "Displays the name of the author of the comment."
+    },
+    {
+      "name": "core/comment-content",
+      "title": "Comment Content",
+      "category": "theme",
+      "description": "Displays the contents of a comment."
+    },
+    {
+      "name": "core/comment-date",
+      "title": "Comment Date",
+      "category": "theme",
+      "description": "Displays the date on which the comment was posted."
+    },
+    {
+      "name": "core/comment-edit-link",
+      "title": "Comment Edit Link",
+      "category": "theme",
+      "description": "Displays a link to edit the comment in the WordPress Dashboard. This link is only visible to users with the edit comment capability."
+    },
+    {
+      "name": "core/comment-reply-link",
+      "title": "Comment Reply Link",
+      "category": "theme",
+      "description": "Displays a link to reply to a comment."
+    },
+    {
+      "name": "core/comment-template",
+      "title": "Comment Template",
+      "category": "design",
+      "description": "Contains the block elements used to display a comment, like the title, date, author, avatar and more."
+    },
+    {
+      "name": "core/comments",
+      "title": "Comments",
+      "category": "theme",
+      "description": "An advanced block that allows displaying post comments using different visual configurations."
+    },
+    {
+      "name": "core/comments-pagination",
+      "title": "Comments Pagination",
+      "category": "theme",
+      "description": "Displays a paginated navigation to next/previous set of comments, when applicable."
+    },
+    {
+      "name": "core/comments-pagination-next",
+      "title": "Comments Next Page",
+      "category": "theme",
+      "description": "Displays the next comment's page link."
+    },
+    {
+      "name": "core/comments-pagination-numbers",
+      "title": "Comments Page Numbers",
+      "category": "theme",
+      "description": "Displays a list of page numbers for comments pagination."
+    },
+    {
+      "name": "core/comments-pagination-previous",
+      "title": "Comments Previous Page",
+      "category": "theme",
+      "description": "Displays the previous comment's page link."
+    },
+    {
+      "name": "core/comments-title",
+      "title": "Comments Title",
+      "category": "theme",
+      "description": "Displays a title with the number of comments."
+    },
+    {
+      "name": "core/cover",
+      "title": "Cover",
+      "category": "media",
+      "description": "Add an image or video with a text overlay."
+    },
+    {
+      "name": "core/details",
+      "title": "Details",
+      "category": "text",
+      "description": "Hide and show additional content."
+    },
+    {
+      "name": "core/embed",
+      "title": "Embed",
+      "category": "embed",
+      "description": "Add a block that displays content pulled from other sites, like Twitter or YouTube."
+    },
+    {
+      "name": "core/file",
+      "title": "File",
+      "category": "media",
+      "description": "Add a link to a downloadable file."
+    },
+    {
+      "name": "core/footnotes",
+      "title": "Footnotes",
+      "category": "text",
+      "description": "Display footnotes added to the page."
+    },
+    {
+      "name": "core/freeform",
+      "title": "Classic",
+      "category": "text",
+      "description": "Use the classic WordPress editor."
+    },
+    {
+      "name": "core/gallery",
+      "title": "Gallery",
+      "category": "media",
+      "description": "Display multiple images in a rich gallery."
+    },
+    {
+      "name": "core/group",
+      "title": "Group",
+      "category": "design",
+      "description": "Gather blocks in a layout container."
+    },
+    {
+      "name": "core/heading",
+      "title": "Heading",
+      "category": "text",
+      "description": "Introduce new sections and organize content to help visitors (and search engines) understand the structure of your content."
+    },
+    {
+      "name": "core/home-link",
+      "title": "Home Link",
+      "category": "design",
+      "description": "Create a link that always points to the homepage of the site. Usually not necessary if there is already a site title link present in the header."
+    },
+    {
+      "name": "core/html",
+      "title": "Custom HTML",
+      "category": "widgets",
+      "description": "Add custom HTML code and preview it as you edit."
+    },
+    {
+      "name": "core/icon",
+      "title": "Icon",
+      "category": "media",
+      "description": "Insert an SVG icon."
+    },
+    {
+      "name": "core/image",
+      "title": "Image",
+      "category": "media",
+      "description": "Insert an image to make a visual statement."
+    },
+    {
+      "name": "core/latest-comments",
+      "title": "Latest Comments",
+      "category": "widgets",
+      "description": "Display a list of your most recent comments."
+    },
+    {
+      "name": "core/latest-posts",
+      "title": "Latest Posts",
+      "category": "widgets",
+      "description": "Display a list of your most recent posts."
+    },
+    {
+      "name": "core/legacy-widget",
+      "title": "Legacy Widget",
+      "category": "widgets",
+      "description": "Display a legacy widget."
+    },
+    {
+      "name": "core/list",
+      "title": "List",
+      "category": "text",
+      "description": "An organized collection of items displayed in a specific order."
+    },
+    {
+      "name": "core/list-item",
+      "title": "List Item",
+      "category": "text",
+      "description": "An individual item within a list."
+    },
+    {
+      "name": "core/loginout",
+      "title": "Login/out",
+      "category": "theme",
+      "description": "Show login & logout links."
+    },
+    {
+      "name": "core/math",
+      "title": "Math",
+      "category": "text",
+      "description": "Display mathematical notation using LaTeX."
+    },
+    {
+      "name": "core/media-text",
+      "title": "Media & Text",
+      "category": "media",
+      "description": "Set media and words side-by-side for a richer layout."
+    },
+    {
+      "name": "core/missing",
+      "title": "Unsupported",
+      "category": "text",
+      "description": "Your site doesn’t include support for this block."
+    },
+    {
+      "name": "core/more",
+      "title": "More",
+      "category": "design",
+      "description": "Content before this block will be shown in the excerpt on your archives page."
+    },
+    {
+      "name": "core/navigation",
+      "title": "Navigation",
+      "category": "theme",
+      "description": "A collection of blocks that allow visitors to get around your site."
+    },
+    {
+      "name": "core/navigation-link",
+      "title": "Custom Link",
+      "category": "design",
+      "description": "Add a page, link, or another item to your navigation."
+    },
+    {
+      "name": "core/navigation-overlay-close",
+      "title": "Navigation Overlay Close",
+      "category": "design",
+      "description": "A customizable button to close overlays."
+    },
+    {
+      "name": "core/navigation-submenu",
+      "title": "Submenu",
+      "category": "design",
+      "description": "Add a submenu to your navigation."
+    },
+    {
+      "name": "core/nextpage",
+      "title": "Page Break",
+      "category": "design",
+      "description": "Separate your content into a multi-page experience."
+    },
+    {
+      "name": "core/page-list",
+      "title": "Page List",
+      "category": "widgets",
+      "description": "Display a list of all pages."
+    },
+    {
+      "name": "core/page-list-item",
+      "title": "Page List Item",
+      "category": "widgets",
+      "description": "Displays a page inside a list of all pages."
+    },
+    {
+      "name": "core/paragraph",
+      "title": "Paragraph",
+      "category": "text",
+      "description": "Start with the basic building block of all narrative."
+    },
+    {
+      "name": "core/pattern",
+      "title": "Pattern Placeholder",
+      "category": "theme",
+      "description": "Show a block pattern."
+    },
+    {
+      "name": "core/playlist",
+      "title": "Playlist",
+      "category": "media",
+      "description": "Embed a simple playlist."
+    },
+    {
+      "name": "core/playlist-track",
+      "title": "Playlist track",
+      "category": "media",
+      "description": "Playlist track."
+    },
+    {
+      "name": "core/post-author",
+      "title": "Author (deprecated)",
+      "category": "theme",
+      "description": "This block is deprecated. Please use the Avatar block, the Author Name block, and the Author Biography block instead."
+    },
+    {
+      "name": "core/post-author-biography",
+      "title": "Author Biography",
+      "category": "theme",
+      "description": "The author biography."
+    },
+    {
+      "name": "core/post-author-name",
+      "title": "Author Name",
+      "category": "theme",
+      "description": "The author name."
+    },
+    {
+      "name": "core/post-comments-count",
+      "title": "Comments Count",
+      "category": "theme",
+      "description": "Display a post's comments count."
+    },
+    {
+      "name": "core/post-comments-form",
+      "title": "Comments Form",
+      "category": "theme",
+      "description": "Display a post's comments form."
+    },
+    {
+      "name": "core/post-comments-link",
+      "title": "Comments Link",
+      "category": "theme",
+      "description": "Displays the link to the current post comments."
+    },
+    {
+      "name": "core/post-content",
+      "title": "Content",
+      "category": "theme",
+      "description": "Displays the contents of a post or page."
+    },
+    {
+      "name": "core/post-date",
+      "title": "Date",
+      "category": "theme",
+      "description": "Display a custom date."
+    },
+    {
+      "name": "core/post-excerpt",
+      "title": "Excerpt",
+      "category": "theme",
+      "description": "Display the excerpt."
+    },
+    {
+      "name": "core/post-featured-image",
+      "title": "Featured Image",
+      "category": "theme",
+      "description": "Display a post's featured image."
+    },
+    {
+      "name": "core/post-navigation-link",
+      "title": "Post Navigation Link",
+      "category": "theme",
+      "description": "Displays the next or previous post link that is adjacent to the current post."
+    },
+    {
+      "name": "core/post-template",
+      "title": "Post Template",
+      "category": "theme",
+      "description": "Contains the block elements used to render a post, like the title, date, featured image, content or excerpt, and more."
+    },
+    {
+      "name": "core/post-terms",
+      "title": "Post Terms",
+      "category": "theme",
+      "description": "Post terms."
+    },
+    {
+      "name": "core/post-time-to-read",
+      "title": "Time to Read",
+      "category": "theme",
+      "description": "Show minutes required to finish reading the post. Can also show a word count."
+    },
+    {
+      "name": "core/post-title",
+      "title": "Title",
+      "category": "theme",
+      "description": "Displays the title of a post, page, or any other content-type."
+    },
+    {
+      "name": "core/preformatted",
+      "title": "Preformatted",
+      "category": "text",
+      "description": "Add text that respects your spacing and tabs, and also allows styling."
+    },
+    {
+      "name": "core/pullquote",
+      "title": "Pullquote",
+      "category": "text",
+      "description": "Give special visual emphasis to a quote from your text."
+    },
+    {
+      "name": "core/query",
+      "title": "Query Loop",
+      "category": "theme",
+      "description": "An advanced block that allows displaying post types based on different query parameters and visual configurations."
+    },
+    {
+      "name": "core/query-no-results",
+      "title": "No Results",
+      "category": "theme",
+      "description": "Contains the block elements used to render content when no query results are found."
+    },
+    {
+      "name": "core/query-pagination",
+      "title": "Pagination",
+      "category": "theme",
+      "description": "Displays a paginated navigation to next/previous set of posts, when applicable."
+    },
+    {
+      "name": "core/query-pagination-next",
+      "title": "Next Page",
+      "category": "theme",
+      "description": "Displays the next posts page link."
+    },
+    {
+      "name": "core/query-pagination-numbers",
+      "title": "Page Numbers",
+      "category": "theme",
+      "description": "Displays a list of page numbers for pagination."
+    },
+    {
+      "name": "core/query-pagination-previous",
+      "title": "Previous Page",
+      "category": "theme",
+      "description": "Displays the previous posts page link."
+    },
+    {
+      "name": "core/query-title",
+      "title": "Query Title",
+      "category": "theme",
+      "description": "Display the query title."
+    },
+    {
+      "name": "core/query-total",
+      "title": "Query Total",
+      "category": "theme",
+      "description": "Display the total number of results in a query."
+    },
+    {
+      "name": "core/quote",
+      "title": "Quote",
+      "category": "text",
+      "description": "Give quoted text visual emphasis. \"In quoting others, we cite ourselves.\" — Julio Cortázar"
+    },
+    {
+      "name": "core/read-more",
+      "title": "Read More",
+      "category": "theme",
+      "description": "Displays the link of a post, page, or any other content-type."
+    },
+    {
+      "name": "core/rss",
+      "title": "RSS",
+      "category": "widgets",
+      "description": "Display entries from any RSS or Atom feed."
+    },
+    {
+      "name": "core/search",
+      "title": "Search",
+      "category": "widgets",
+      "description": "Help visitors find your content."
+    },
+    {
+      "name": "core/separator",
+      "title": "Separator",
+      "category": "design",
+      "description": "Create a break between ideas or sections with a horizontal separator."
+    },
+    {
+      "name": "core/shortcode",
+      "title": "Shortcode",
+      "category": "widgets",
+      "description": "Insert additional custom elements with a WordPress shortcode."
+    },
+    {
+      "name": "core/site-logo",
+      "title": "Site Logo",
+      "category": "theme",
+      "description": "Display an image to represent this site. Update this block and the changes apply everywhere."
+    },
+    {
+      "name": "core/site-tagline",
+      "title": "Site Tagline",
+      "category": "theme",
+      "description": "Describe in a few words what this site is about. This is important for search results, sharing on social media, and gives overall clarity to visitors."
+    },
+    {
+      "name": "core/site-title",
+      "title": "Site Title",
+      "category": "theme",
+      "description": "Displays the name of this site. Update the block, and the changes apply everywhere it’s used. This will also appear in the browser title bar and in search results."
+    },
+    {
+      "name": "core/social-link",
+      "title": "Social Icon",
+      "category": "widgets",
+      "description": "Display an icon linking to a social profile or site."
+    },
+    {
+      "name": "core/social-links",
+      "title": "Social Icons",
+      "category": "widgets",
+      "description": "Display icons linking to your social profiles or sites."
+    },
+    {
+      "name": "core/spacer",
+      "title": "Spacer",
+      "category": "design",
+      "description": "Add white space between blocks and customize its height."
+    },
+    {
+      "name": "core/tab-list",
+      "title": "Tab List",
+      "category": "design",
+      "description": "Display the tab buttons for a tabbed interface."
+    },
+    {
+      "name": "core/tab-panel",
+      "title": "Tab Panel",
+      "category": "design",
+      "description": "Content for a tab in a tabbed interface."
+    },
+    {
+      "name": "core/tab-panels",
+      "title": "Tab Panels",
+      "category": "design",
+      "description": "Container for tab panel content in a tabbed interface."
+    },
+    {
+      "name": "core/table",
+      "title": "Table",
+      "category": "text",
+      "description": "Create structured content in rows and columns to display information."
+    },
+    {
+      "name": "core/tabs",
+      "title": "Tabs",
+      "category": "design",
+      "description": "Display content in a tabbed interface to help users navigate detailed content with ease."
+    },
+    {
+      "name": "core/tag-cloud",
+      "title": "Tag Cloud",
+      "category": "widgets",
+      "description": "A cloud of popular keywords, each sized by how often it appears."
+    },
+    {
+      "name": "core/template-part",
+      "title": "Template Part",
+      "category": "theme",
+      "description": "Edit the different global regions of your site, like the header, footer, sidebar, or create your own."
+    },
+    {
+      "name": "core/term-count",
+      "title": "Term Count",
+      "category": "theme",
+      "description": "Displays the post count of a taxonomy term."
+    },
+    {
+      "name": "core/term-description",
+      "title": "Term Description",
+      "category": "theme",
+      "description": "Display the description of categories, tags and custom taxonomies when viewing an archive."
+    },
+    {
+      "name": "core/term-name",
+      "title": "Term Name",
+      "category": "theme",
+      "description": "Displays the name of a taxonomy term."
+    },
+    {
+      "name": "core/term-template",
+      "title": "Term Template",
+      "category": "theme",
+      "description": "Contains the block elements used to render a taxonomy term, like the name, description, and more."
+    },
+    {
+      "name": "core/terms-query",
+      "title": "Terms Query",
+      "category": "theme",
+      "description": "An advanced block that allows displaying taxonomy terms based on different query parameters and visual configurations."
+    },
+    {
+      "name": "core/text-columns",
+      "title": "Text Columns (deprecated)",
+      "category": "design",
+      "description": "This block is deprecated. Please use the Columns block instead."
+    },
+    {
+      "name": "core/verse",
+      "title": "Poetry",
+      "category": "text",
+      "description": "Insert poetry. Use special spacing formats. Or quote song lyrics."
+    },
+    {
+      "name": "core/video",
+      "title": "Video",
+      "category": "media",
+      "description": "Embed a video from your media library or upload a new one."
+    },
+    {
+      "name": "core/widget-group",
+      "title": "Widget Group",
+      "category": "widgets",
+      "description": ""
+    }
+  ],
+  "missing_from_renderer": [],
+  "missing_from_rest": [],
+  "renderer_only": [
+    "core/query-loop",
+    "core/row",
+    "core/stack"
+  ],
+  "rest_only": [
+    "core/page-break",
+    "core/query-loop",
+    "core/row",
+    "core/stack"
+  ]
+}

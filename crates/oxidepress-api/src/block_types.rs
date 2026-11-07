@@ -3,7 +3,7 @@
 //! GET /wp-json/wp/v2/block-types
 //! GET /wp-json/wp/v2/block-types/{namespace}/{name}
 //!
-//! Returns 73 registered core Gutenberg block types (WordPress 6.9 compatible).
+//! Returns the core block types from WordPress 7.1.4.
 
 use axum::{
     extract::{Path, State},
@@ -181,7 +181,7 @@ fn attrs_empty() -> Value {
 
 // ─── Block registry ──────────────────────────────────────────────────────────
 
-/// Returns all 73 core blocks in WordPress 6.9 format.
+/// Returns the core blocks shipped with WordPress 7.1.4.
 fn core_blocks() -> Vec<Value> {
     // (name, title, category, description, is_dynamic, attributes_fn, supports_fn)
     let blocks: &[(&str, &str, &str, &str, bool)] = &[
@@ -274,6 +274,43 @@ fn core_blocks() -> Vec<Value> {
         ("core/comments-pagination-next",   "Comments Next Page",        "theme", "Displays the Next page link for comments.", true),
         ("core/comments-pagination-previous","Comments Previous Page",   "theme", "Displays the Previous page link for comments.", true),
         ("core/comments-pagination-numbers","Comments Page Numbers",     "theme", "Displays a list of page numbers for comment navigation.", true),
+        // ── WordPress 7.1 ────────────────────────────────────────────────────
+        ("core/accordion", "Accordion", "design", "Displays a foldable layout that groups content in collapsible sections.", false),
+        ("core/accordion-heading", "Accordion Heading", "design", "Displays a heading that toggles the accordion panel.", false),
+        ("core/accordion-item", "Accordion Item", "design", "Wraps the heading and panel in one unit.", false),
+        ("core/accordion-panel", "Accordion Panel", "design", "Contains the hidden or revealed content beneath the heading.", false),
+        ("core/block", "Pattern", "reusable", "Reuse this design across your site.", false),
+        ("core/breadcrumbs", "Breadcrumbs", "theme", "Display a breadcrumb trail showing the path to the current page.", true),
+        ("core/freeform", "Classic", "text", "Use the classic WordPress editor.", false),
+        ("core/home-link", "Home Link", "design", "Create a link that always points to the homepage of the site.", true),
+        ("core/icon", "Icon", "media", "Insert an SVG icon.", false),
+        ("core/legacy-widget", "Legacy Widget", "widgets", "Display a legacy widget.", true),
+        ("core/math", "Math", "text", "Display mathematical notation using LaTeX.", false),
+        ("core/missing", "Unsupported", "text", "Your site does not include support for this block.", false),
+        ("core/more", "More", "design", "Content before this block will be shown in the excerpt on your archives page.", true),
+        ("core/navigation-link", "Custom Link", "design", "Add a page, link, or another item to your navigation.", true),
+        ("core/navigation-overlay-close", "Navigation Overlay Close", "design", "A customizable button to close overlays.", false),
+        ("core/navigation-submenu", "Submenu", "design", "Add a submenu to your navigation.", true),
+        ("core/nextpage", "Page Break", "design", "Separate your content into a multi-page experience.", true),
+        ("core/page-list-item", "Page List Item", "widgets", "Displays a page inside a list of all pages.", false),
+        ("core/pattern", "Pattern Placeholder", "theme", "Show a block pattern.", false),
+        ("core/playlist", "Playlist", "media", "Embed a simple playlist.", false),
+        ("core/playlist-track", "Playlist track", "media", "Playlist track.", false),
+        ("core/post-comments-count", "Comments Count", "theme", "Display a post's comments count.", true),
+        ("core/post-comments-link", "Comments Link", "theme", "Displays the link to the current post comments.", true),
+        ("core/post-template", "Post Template", "theme", "Contains the block elements used to render a post.", false),
+        ("core/post-time-to-read", "Time to Read", "theme", "Show minutes required to finish reading the post.", true),
+        ("core/query-total", "Query Total", "theme", "Display the total number of results in a query.", true),
+        ("core/tab-list", "Tab List", "design", "Display the tab buttons for a tabbed interface.", false),
+        ("core/tab-panel", "Tab Panel", "design", "Content for a tab in a tabbed interface.", false),
+        ("core/tab-panels", "Tab Panels", "design", "Container for tab panel content in a tabbed interface.", false),
+        ("core/tabs", "Tabs", "design", "Display content in a tabbed interface.", false),
+        ("core/term-count", "Term Count", "theme", "Displays the post count of a taxonomy term.", true),
+        ("core/term-name", "Term Name", "theme", "Displays the name of a taxonomy term.", true),
+        ("core/term-template", "Term Template", "theme", "Contains the block elements used to render a taxonomy term.", false),
+        ("core/terms-query", "Terms Query", "theme", "Display taxonomy terms based on query parameters.", true),
+        ("core/text-columns", "Text Columns (deprecated)", "design", "This block is deprecated. Please use the Columns block instead.", false),
+        ("core/widget-group", "Widget Group", "widgets", "Group legacy widgets.", false),
     ];
 
     blocks
@@ -382,6 +419,21 @@ mod tests {
             "Expected ≥65 blocks, got {}",
             blocks.len()
         );
+    }
+
+    #[test]
+    fn rest_catalog_covers_wordpress_71_blocks() {
+        let raw = include_str!("../../../gaps/blocks.json");
+        let report: serde_json::Value = serde_json::from_str(raw).expect("blocks gap");
+        let blocks = core_blocks();
+        let names: std::collections::HashSet<&str> = blocks
+            .iter()
+            .filter_map(|block| block["name"].as_str())
+            .collect();
+        for block in report["wordpress_blocks"].as_array().unwrap() {
+            let name = block["name"].as_str().unwrap();
+            assert!(names.contains(name), "REST catalog missing {name}");
+        }
     }
 
     #[test]

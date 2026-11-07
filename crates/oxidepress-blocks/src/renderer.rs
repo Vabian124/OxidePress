@@ -1,5 +1,41 @@
+use std::cell::Cell;
+
 use crate::parser::Block;
 use crate::registry::BlockRegistry;
+
+std::thread_local! {
+    static ACTIVE_RENDERER: Cell<*const BlockRenderer> = const { Cell::new(std::ptr::null()) };
+}
+
+fn with_active_renderer<T>(renderer: &BlockRenderer, render: impl FnOnce() -> T) -> T {
+    ACTIVE_RENDERER.with(|cell| {
+        let previous = cell.get();
+        cell.set(renderer as *const BlockRenderer);
+        let result = render();
+        cell.set(previous);
+        result
+    })
+}
+
+pub(crate) fn has_active_renderer() -> bool {
+    ACTIVE_RENDERER.with(|cell| !cell.get().is_null())
+}
+
+/// Render nested blocks with the renderer that is already on the stack.
+///
+/// The pointer is only dereferenced while `with_active_renderer` still holds
+/// that renderer. There is no active renderer when a callback is invoked on
+/// its own, and the caller keeps the previous inner-html fallback.
+pub(crate) fn render_active_blocks(blocks: &[Block]) -> String {
+    ACTIVE_RENDERER.with(|cell| {
+        let ptr = cell.get();
+        if ptr.is_null() {
+            return String::new();
+        }
+        let renderer = unsafe { &*ptr };
+        renderer.render_blocks(blocks)
+    })
+}
 
 /// Block renderer that uses a registry to determine how to render each block.
 pub struct BlockRenderer {
@@ -24,6 +60,10 @@ impl BlockRenderer {
     /// For blocks with inner_blocks, renders them recursively.
     /// Unknown blocks are rendered using their inner_html.
     pub fn render_block(&self, block: &Block) -> String {
+        with_active_renderer(self, || self.render_block_inner(block))
+    }
+
+    fn render_block_inner(&self, block: &Block) -> String {
         // Freeform blocks just return their content
         if block.name == "core/freeform" {
             return block.inner_html.clone();
@@ -52,11 +92,13 @@ impl BlockRenderer {
 
     /// Render all blocks in a slice, concatenating the results.
     pub fn render_blocks(&self, blocks: &[Block]) -> String {
-        let mut output = String::new();
-        for block in blocks {
-            output.push_str(&self.render_block(block));
-        }
-        output
+        with_active_renderer(self, || {
+            let mut output = String::new();
+            for block in blocks {
+                output.push_str(&self.render_block_inner(block));
+            }
+            output
+        })
     }
 
     /// Render a container block that has inner blocks.
@@ -99,8 +141,13 @@ impl BlockRenderer {
             }
             "core/query" | "core/query-loop" => inner_rendered,
             _ => {
-                // Unknown container: just render inner blocks
-                inner_rendered
+                let slug = block
+                    .name
+                    .strip_prefix("core/")
+                    .unwrap_or(block.name.as_str());
+                let base = format!("wp-block-{slug}");
+                let class = extract_class_attr(block, &base);
+                format!("<div class=\"{class}\">{inner_rendered}</div>")
             }
         }
     }

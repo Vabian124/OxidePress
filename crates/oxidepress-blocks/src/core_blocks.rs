@@ -11,6 +11,7 @@ pub fn register_core_blocks(registry: &mut BlockRegistry) {
     register_widget_blocks(registry);
     register_theme_blocks(registry);
     register_embed_blocks(registry);
+    crate::pinned::register_pinned_blocks(registry);
 }
 
 // ---------------------------------------------------------------------------
@@ -692,7 +693,14 @@ fn render_site_title() -> RenderCallback {
         };
         let class = build_class("wp-block-site-title", block);
 
-        format!("<{tag} class=\"{class}\"><a href=\"/\">Site Title</a></{tag}>")
+        let ctx = crate::context::current();
+        let title = crate::context::shown(&ctx.site_title, "Site Title");
+        let href = crate::context::safe_href(if ctx.site_url.is_empty() {
+            "/"
+        } else {
+            &ctx.site_url
+        });
+        format!("<{tag} class=\"{class}\"><a href=\"{href}\">{title}</a></{tag}>")
     })
 }
 
@@ -742,10 +750,18 @@ fn render_post_title() -> RenderCallback {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        if is_link {
-            format!("<{tag} class=\"{class}\"><a href=\"#\">Post Title</a></{tag}>")
+        let ctx = crate::context::current();
+        let title = crate::context::shown(&ctx.post_title, "Post Title");
+        let href = crate::context::safe_href(if ctx.post_url.is_empty() {
+            "#"
         } else {
-            format!("<{tag} class=\"{class}\">Post Title</{tag}>")
+            &ctx.post_url
+        });
+
+        if is_link {
+            format!("<{tag} class=\"{class}\"><a href=\"{href}\">{title}</a></{tag}>")
+        } else {
+            format!("<{tag} class=\"{class}\">{title}</{tag}>")
         }
     })
 }
@@ -771,10 +787,21 @@ fn render_post_excerpt() -> RenderCallback {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        let mut html = format!("<div class=\"{class}\"><p class=\"wp-block-post-excerpt__excerpt\">Post excerpt placeholder...</p>");
+        let ctx = crate::context::current();
+        let excerpt = crate::context::shown(&ctx.post_excerpt, "Post excerpt placeholder...");
+        let href = crate::context::safe_href(if ctx.post_url.is_empty() {
+            "#"
+        } else {
+            &ctx.post_url
+        });
+
+        let mut html = format!(
+            "<div class=\"{class}\"><p class=\"wp-block-post-excerpt__excerpt\">{excerpt}</p>"
+        );
         if !more_text.is_empty() {
+            let more = crate::context::escape_html(more_text);
             html.push_str(&format!(
-                "<p class=\"wp-block-post-excerpt__more-text\"><a href=\"#\">{more_text}</a></p>"
+                "<p class=\"wp-block-post-excerpt__more-text\"><a href=\"{href}\">{more}</a></p>"
             ));
         }
         html.push_str("</div>");
@@ -791,10 +818,30 @@ fn render_post_date() -> RenderCallback {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        if is_link {
-            format!("<div class=\"{class}\"><a href=\"#\"><time>January 1, 2025</time></a></div>")
+        let ctx = crate::context::current();
+        let date = crate::context::shown(&ctx.post_date, "January 1, 2025");
+        let iso = crate::context::escape_html(if ctx.post_date_iso.is_empty() {
+            ""
         } else {
-            format!("<div class=\"{class}\"><time>January 1, 2025</time></div>")
+            &ctx.post_date_iso
+        });
+        let datetime = if iso.is_empty() {
+            String::new()
+        } else {
+            format!(" datetime=\"{iso}\"")
+        };
+        let href = crate::context::safe_href(if ctx.post_url.is_empty() {
+            "#"
+        } else {
+            &ctx.post_url
+        });
+
+        if is_link {
+            format!(
+                "<div class=\"{class}\"><a href=\"{href}\"><time{datetime}>{date}</time></a></div>"
+            )
+        } else {
+            format!("<div class=\"{class}\"><time{datetime}>{date}</time></div>")
         }
     })
 }
@@ -812,7 +859,8 @@ fn render_post_author() -> RenderCallback {
         if show_avatar {
             html.push_str("<div class=\"wp-block-post-author__avatar\"><img alt=\"\" src=\"\" class=\"avatar avatar-96 photo\" width=\"96\" height=\"96\" /></div>");
         }
-        html.push_str("<div class=\"wp-block-post-author__content\"><p class=\"wp-block-post-author__name\">Author</p></div></div>");
+        let author = crate::context::shown(&crate::context::current().post_author, "Author");
+        html.push_str(&format!("<div class=\"wp-block-post-author__content\"><p class=\"wp-block-post-author__name\">{author}</p></div></div>"));
         html
     })
 }
@@ -826,12 +874,19 @@ fn render_post_featured_image() -> RenderCallback {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        if is_link {
-            format!(
-                "<figure class=\"{class}\"><a href=\"#\"><img src=\"\" alt=\"\" /></a></figure>"
-            )
+        let ctx = crate::context::current();
+        let src = crate::context::escape_html(&ctx.featured_image_url);
+        let href = crate::context::safe_href(if ctx.post_url.is_empty() {
+            "#"
         } else {
-            format!("<figure class=\"{class}\"><img src=\"\" alt=\"\" /></figure>")
+            &ctx.post_url
+        });
+        let alt = crate::context::shown(&ctx.post_title, "");
+
+        if is_link {
+            format!("<figure class=\"{class}\"><a href=\"{href}\"><img src=\"{src}\" alt=\"{alt}\" /></a></figure>")
+        } else {
+            format!("<figure class=\"{class}\"><img src=\"{src}\" alt=\"{alt}\" /></figure>")
         }
     })
 }
@@ -1069,13 +1124,15 @@ fn detect_embed_provider(url: &str) -> &'static str {
 
 /// Simple recursive rendering for inner blocks (used inside render callbacks
 /// that don't have access to the full BlockRenderer).
-fn render_inner_blocks_simple(blocks: &[Block]) -> String {
+pub(crate) fn render_inner_blocks_simple(blocks: &[Block]) -> String {
+    if crate::renderer::has_active_renderer() {
+        return crate::renderer::render_active_blocks(blocks);
+    }
     let mut output = String::new();
     for block in blocks {
         if block.name == "core/freeform" {
             output.push_str(&block.inner_html);
         } else if !block.inner_blocks.is_empty() {
-            // Recursively render container blocks with simple wrappers
             output.push_str(&render_inner_blocks_simple(&block.inner_blocks));
         } else {
             output.push_str(&block.inner_html);

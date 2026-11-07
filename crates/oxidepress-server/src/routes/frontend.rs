@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and render the current post inside theme blocks.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -775,7 +775,61 @@ async fn single_post_by_slug(
             // If content has Gutenberg blocks, render them with the block renderer
             if oxidepress_themes::formatting::has_blocks(&p.post_content) {
                 let blocks = oxidepress_blocks::parse_blocks(&p.post_content);
-                let rendered = state.block_renderer.render_blocks(&blocks);
+                let site_title = state.options.get_blogname().await.unwrap_or_default();
+                let site_tagline = state
+                    .options
+                    .get_blogdescription()
+                    .await
+                    .unwrap_or_default();
+                let mut author_name = data.author_name.clone();
+                if author_name.is_empty() {
+                    if let Ok(Some(user)) = wp_users::Entity::find_by_id(p.post_author)
+                        .one(&state.db)
+                        .await
+                    {
+                        author_name = user.display_name.clone();
+                    }
+                }
+                let mut featured_image_url = String::new();
+                if let Some(meta) = wp_postmeta::Entity::find()
+                    .filter(wp_postmeta::Column::PostId.eq(post_id))
+                    .filter(wp_postmeta::Column::MetaKey.eq("_thumbnail_id"))
+                    .one(&state.db)
+                    .await
+                    .ok()
+                    .flatten()
+                {
+                    if let Some(attachment_id) = meta
+                        .meta_value
+                        .as_deref()
+                        .and_then(|value| value.parse::<u64>().ok())
+                    {
+                        if let Ok(Some(attachment)) = wp_posts::Entity::find_by_id(attachment_id)
+                            .one(&state.db)
+                            .await
+                        {
+                            featured_image_url = attachment.guid.clone();
+                        }
+                    }
+                }
+                let render_ctx = oxidepress_blocks::RenderContext {
+                    site_title,
+                    site_tagline,
+                    site_url: state.site_url.clone(),
+                    post_id: data.id,
+                    post_title: data.title.clone(),
+                    post_excerpt: data.excerpt.clone(),
+                    post_date: data.date_formatted.clone(),
+                    post_date_iso: data.date_iso.clone(),
+                    post_author: author_name,
+                    post_url: data.permalink.clone(),
+                    featured_image_url,
+                    comment_count: data.comment_count,
+                    content_words: p.post_content.split_whitespace().count() as u32,
+                };
+                let rendered = oxidepress_blocks::with_render_context(&render_ctx, || {
+                    state.block_renderer.render_blocks(&blocks)
+                });
                 context.insert("the_content", &rendered);
             }
 
