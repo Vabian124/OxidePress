@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to show custom fields and publish saved contact forms.
+// Modified by Vabian124 on 2026-11-07 to save custom fields for posts, pages, and products.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -400,7 +400,11 @@ async fn unique_product_slug(
     format!("{base}-{except_id}")
 }
 
-async fn product_acf_fields(state: &AppState, post_id: u64) -> Vec<serde_json::Value> {
+pub(crate) async fn editor_acf_fields(
+    state: &AppState,
+    post_type: &str,
+    post_id: u64,
+) -> Vec<serde_json::Value> {
     let groups = wp_posts::Entity::find()
         .filter(wp_posts::Column::PostType.eq("acf-field-group"))
         .filter(wp_posts::Column::PostStatus.eq("publish"))
@@ -421,7 +425,7 @@ async fn product_acf_fields(state: &AppState, post_id: u64) -> Vec<serde_json::V
             .ok()
             .flatten()
             .unwrap_or_default();
-        if location != "product" && location != "all" {
+        if location != post_type && location != "all" {
             continue;
         }
         let children = wp_posts::Entity::find()
@@ -454,31 +458,23 @@ async fn product_acf_fields(state: &AppState, post_id: u64) -> Vec<serde_json::V
     fields
 }
 
-async fn acf_fields_from_form(state: &AppState, form: &ProductForm) -> Vec<serde_json::Value> {
-    let mut fields = product_acf_fields(state, form.post_id.unwrap_or(0)).await;
-    for field in &mut fields {
-        let Some(name) = field.get("name").and_then(|value| value.as_str()) else {
-            continue;
-        };
-        if let Some(value) = form
-            .acf_name
-            .iter()
-            .position(|candidate| candidate == name)
-            .and_then(|index| form.acf_value.get(index))
-        {
-            field["value"] = serde_json::Value::String(value.clone());
-        }
-    }
-    fields
+async fn product_acf_fields(state: &AppState, post_id: u64) -> Vec<serde_json::Value> {
+    editor_acf_fields(state, "product", post_id).await
 }
 
-async fn save_product_acf(state: &AppState, post_id: u64, form: &ProductForm) {
-    let definitions = product_acf_fields(state, 0).await;
-    for (index, name) in form.acf_name.iter().enumerate() {
+pub(crate) async fn save_located_fields(
+    state: &AppState,
+    post_type: &str,
+    post_id: u64,
+    names: &[String],
+    values: &[String],
+) {
+    let definitions = editor_acf_fields(state, post_type, 0).await;
+    for (index, name) in names.iter().enumerate() {
         if name.is_empty() {
             continue;
         }
-        let value = form.acf_value.get(index).cloned().unwrap_or_default();
+        let value = values.get(index).cloned().unwrap_or_default();
         if queries::set_post_meta(&state.db, post_id, name, &value)
             .await
             .is_err()
@@ -499,6 +495,28 @@ async fn save_product_acf(state: &AppState, post_id: u64, form: &ProductForm) {
             }
         }
     }
+}
+
+async fn acf_fields_from_form(state: &AppState, form: &ProductForm) -> Vec<serde_json::Value> {
+    let mut fields = product_acf_fields(state, form.post_id.unwrap_or(0)).await;
+    for field in &mut fields {
+        let Some(name) = field.get("name").and_then(|value| value.as_str()) else {
+            continue;
+        };
+        if let Some(value) = form
+            .acf_name
+            .iter()
+            .position(|candidate| candidate == name)
+            .and_then(|index| form.acf_value.get(index))
+        {
+            field["value"] = serde_json::Value::String(value.clone());
+        }
+    }
+    fields
+}
+
+async fn save_product_acf(state: &AppState, post_id: u64, form: &ProductForm) {
+    save_located_fields(state, "product", post_id, &form.acf_name, &form.acf_value).await;
 }
 
 pub(crate) async fn wc_product_editor(
@@ -947,7 +965,7 @@ struct AcfFieldGroupForm {
     field_type: Vec<String>,
 }
 
-fn one_or_many_strings<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
+pub(crate) fn one_or_many_strings<'de, D>(deserializer: D) -> Result<Vec<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
 {

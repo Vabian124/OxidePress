@@ -17,13 +17,50 @@
 
     <style>
         body { margin: 0; }
-        #editor { height: 100vh; }
+        #editor { height: {% if acf_fields %}calc(100vh - 220px){% else %}100vh{% endif %}; }
+        #acf-editor-fields {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 220px;
+            overflow: auto;
+            background: #fff;
+            border-top: 1px solid #c3c4c7;
+            padding: 12px 16px;
+            box-sizing: border-box;
+            z-index: 100;
+        }
+        #acf-editor-fields table { width: 100%; }
+        #acf-editor-fields th { text-align: left; width: 180px; }
     </style>
 </head>
 <body>
     <input type="hidden" name="_wpnonce" id="wpnonce-field" value="{{ wpnonce_save_post }}" />
 
     <div id="editor"></div>
+    {% if acf_fields %}
+    <form id="acf-editor-fields" method="post" action="/wp-admin/post-fields.php">
+        <input type="hidden" name="post_id" id="acf-post-id" value="{{ post_id }}">
+        {% if acf_saved %}<p>Custom fields saved.</p>{% endif %}
+        <table>
+            {% for field in acf_fields %}
+            <tr>
+                <th><label for="acf-{{ field.name }}">{{ field.label }}</label></th>
+                <td>
+                    <input type="hidden" name="acf_name" value="{{ field.name }}">
+                    {% if field.field_type == "textarea" %}
+                    <textarea name="acf_value" id="acf-{{ field.name }}" rows="3">{{ field.value }}</textarea>
+                    {% else %}
+                    <input type="text" name="acf_value" id="acf-{{ field.name }}" value="{{ field.value }}">
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <button type="submit">Save custom fields</button>
+    </form>
+    {% endif %}
 
     <!-- Vendor -->
     <script src="/wp-includes/js/dist/vendor/react.min.js"></script>
@@ -123,6 +160,8 @@
                     status: 'auto-draft',
                 },
             }).then(function(newPost) {
+                var field = document.getElementById('acf-post-id');
+                if (field) field.value = newPost.id;
                 wp.editPost.initializeEditor('editor', settings.post.type, newPost.id);
             }).catch(function(err) {
                 console.error('Failed to create auto-draft:', err);

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to mark the serving theme as active.
+// Modified by Vabian124 on 2026-11-07 to edit custom fields on posts and pages.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -379,6 +379,7 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/wp-admin/post.php",
             get(post_editor_edit).post(post_submit),
         )
+        .route("/wp-admin/post-fields.php", post(post_fields_save))
         .route("/wp-admin/admin-post.php", post(admin_post_handler))
         .route(
             "/wp-admin/upload.php",
@@ -1425,6 +1426,51 @@ async fn posts_list(
     render_admin(&state, "admin/posts.html", &ctx)
 }
 
+#[derive(Deserialize)]
+struct EditorFieldsForm {
+    post_id: u64,
+    #[serde(
+        default,
+        deserialize_with = "crate::routes::plugin_admin::one_or_many_strings",
+        alias = "acf_name[]"
+    )]
+    acf_name: Vec<String>,
+    #[serde(
+        default,
+        deserialize_with = "crate::routes::plugin_admin::one_or_many_strings",
+        alias = "acf_value[]"
+    )]
+    acf_value: Vec<String>,
+}
+
+async fn post_fields_save(
+    State(state): State<Arc<AppState>>,
+    Form(form): Form<EditorFieldsForm>,
+) -> Response {
+    let post = wp_posts::Entity::find_by_id(form.post_id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten();
+    let Some(post) = post.filter(|post| post.post_type == "post" || post.post_type == "page")
+    else {
+        return (StatusCode::NOT_FOUND, "Post not found.").into_response();
+    };
+    crate::routes::plugin_admin::save_located_fields(
+        &state,
+        &post.post_type,
+        post.id,
+        &form.acf_name,
+        &form.acf_value,
+    )
+    .await;
+    Redirect::to(&format!(
+        "/wp-admin/post.php?post={}&action=edit&acf=saved",
+        post.id
+    ))
+    .into_response()
+}
+
 // --- Post Editor ---
 
 #[derive(Deserialize)]
@@ -1432,6 +1478,7 @@ pub struct PostEditQuery {
     pub post: Option<u64>,
     #[allow(dead_code)]
     pub action: Option<String>,
+    pub acf: Option<String>,
 }
 
 async fn post_editor_new(
@@ -1472,6 +1519,11 @@ async fn post_editor_new(
     // Gutenberg editor template variables
     ctx.insert("post_id", &0u64);
     ctx.insert("post_type", &post_type);
+    ctx.insert("acf_saved", &false);
+    ctx.insert(
+        "acf_fields",
+        &crate::routes::plugin_admin::editor_acf_fields(&state, post_type, 0).await,
+    );
     ctx.insert(
         "post_title_json",
         &serde_json::to_string("").unwrap_or_default(),
@@ -1598,6 +1650,11 @@ async fn post_editor_edit(
             // Gutenberg editor template variables
             ctx.insert("post_id", &p.id);
             ctx.insert("post_type", p.post_type.as_str());
+            ctx.insert("acf_saved", &(params.acf.as_deref() == Some("saved")));
+            ctx.insert(
+                "acf_fields",
+                &crate::routes::plugin_admin::editor_acf_fields(&state, &p.post_type, p.id).await,
+            );
             ctx.insert(
                 "post_title_json",
                 &serde_json::to_string(&p.post_title).unwrap_or_default(),
