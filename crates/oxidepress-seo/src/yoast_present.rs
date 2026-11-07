@@ -118,6 +118,7 @@ pub fn present_front(
     let image = first_nonempty(&[&social.og_frontpage_image, &social.og_default_image]);
     let schema = schema_graph(
         &title,
+        "Home",
         home_url,
         home_url,
         language,
@@ -281,6 +282,7 @@ pub fn present_singular(
     };
     let schema = schema_graph(
         &title,
+        source.title,
         source.permalink,
         source.home_url,
         source.language,
@@ -361,6 +363,7 @@ pub fn present_listing(
     let title = expand(template, &vars);
     let schema = schema_graph(
         &title,
+        source.name,
         source.permalink,
         source.home_url,
         source.language,
@@ -437,6 +440,7 @@ struct ArticleSchema<'a> {
 
 fn schema_graph(
     title: &str,
+    crumb: &str,
     page_url: &str,
     home_url: &str,
     language: &str,
@@ -477,7 +481,7 @@ fn schema_graph(
         json!({
             "@type": "BreadcrumbList",
             "@id": format!("{page_url}#breadcrumb"),
-            "itemListElement": breadcrumb(home_url, page_url, title)
+            "itemListElement": breadcrumb(home_url, page_url, crumb)
         }),
         json!({
             "@type": "WebSite",

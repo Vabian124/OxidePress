@@ -421,12 +421,33 @@ fn escape_attr(value: &str) -> String {
 
 fn apply_yoast_document(html: &str, head: &oxidepress_seo::yoast_present::YoastHead) -> String {
     let mut html = apply_document_head(html, &head.title, "");
+    html = strip_link_rel(&html, "canonical");
     html = replace_robots_meta(&html, &head.robots);
     if html.contains("yoast-schema-graph") {
         return html;
     }
     if let Some(idx) = html.find("</title>") {
         html.insert_str(idx + "</title>".len(), &format!("\n{}", head.markup));
+    }
+    html
+}
+
+fn strip_link_rel(html: &str, rel: &str) -> String {
+    let mut html = html.to_string();
+    let needles = [format!("<link rel=\"{rel}\""), format!("<link rel='{rel}'")];
+    loop {
+        let start = needles.iter().find_map(|needle| html.find(needle));
+        let Some(start) = start else {
+            break;
+        };
+        let Some(rel_end) = html[start..].find('>') else {
+            break;
+        };
+        let mut end = start + rel_end + 1;
+        if html.as_bytes().get(end) == Some(&b'\n') {
+            end += 1;
+        }
+        html.replace_range(start..end, "");
     }
     html
 }
@@ -3314,6 +3335,21 @@ mod tests {
         let qv: WpQueryVars =
             serde_urlencoded::from_str("s=hello").expect("should parse without author");
         assert!(qv.author.is_none());
+    }
+
+    #[test]
+    fn yoast_head_keeps_one_canonical() {
+        let html = "<head><title>Old</title>\n<link rel=\"canonical\" href=\"http:&#x2F;&#x2F;example.com&#x2F;old&#x2F;\" />\n<meta name='robots' content='max-image-preview:large' /></head>";
+        let head = oxidepress_seo::yoast_present::YoastHead {
+            title: "New".to_string(),
+            robots: "index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"
+                .to_string(),
+            markup: "<link rel=\"canonical\" href=\"http://example.com/new/\" />".to_string(),
+        };
+        let updated = super::apply_yoast_document(html, &head);
+        assert_eq!(updated.matches("rel=\"canonical\"").count(), 1);
+        assert!(updated.contains("http://example.com/new/"));
+        assert!(!updated.contains("&#x2F;"));
     }
 
     #[test]
