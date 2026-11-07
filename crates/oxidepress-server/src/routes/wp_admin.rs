@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to show the commenter address on the comments screen.
+// Modified by Vabian124 on 2026-11-07 to name the post on each comment row.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -3093,12 +3093,27 @@ async fn comments_list(
         .await
         .unwrap_or_default();
 
+    let post_ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
+    let mut post_titles = std::collections::HashMap::<u64, String>::new();
+    if !post_ids.is_empty() {
+        if let Ok(posts) = wp_posts::Entity::find()
+            .filter(wp_posts::Column::Id.is_in(post_ids))
+            .all(&state.db)
+            .await
+        {
+            for post in posts {
+                post_titles.insert(post.id, post.post_title);
+            }
+        }
+    }
+
     let items: Vec<serde_json::Value> = comments
         .iter()
         .map(|c| {
             serde_json::json!({
                 "id": c.comment_id,
                 "post_id": c.comment_post_id,
+                "post_title": post_titles.get(&c.comment_post_id).cloned().unwrap_or_default(),
                 "author": c.comment_author,
                 "author_email": c.comment_author_email,
                 "author_ip": c.comment_author_ip,
@@ -3131,8 +3146,14 @@ async fn comments_list(
         .await
         .unwrap_or(0);
 
+    let all_count = wp_comments::Entity::find()
+        .count(&state.db)
+        .await
+        .unwrap_or(0);
+
     ctx.insert("comments", &items);
     ctx.insert("total", &total);
+    ctx.insert("all_count", &all_count);
     ctx.insert("page", &page);
     ctx.insert("total_pages", &total_pages);
     ctx.insert("status_filter", &status_filter);

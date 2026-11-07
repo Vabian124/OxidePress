@@ -38,6 +38,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - A reply with `comment_parent` is listed under that comment.
 - A new comment stores the visitor address. The comments screen shows that address under the author.
 - A signed-in visitor sees “Logged in as” their display name on the comment form, and the form does not ask for a name or email.
+- The comments screen names the post a comment belongs to. The All count stays the full total when another status is selected.
 
 ## Next, in order
 

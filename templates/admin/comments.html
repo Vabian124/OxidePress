@@ -7,7 +7,7 @@
 <h1>Comments</h1>
 
 <ul class="subsubsub clearfix">
-    <li><a href="/wp-admin/edit-comments.php" {% if status_filter == "all" %}class="current"{% endif %}>All <span>({{ total }})</span></a></li>
+    <li><a href="/wp-admin/edit-comments.php" {% if status_filter == "all" %}class="current"{% endif %}>All <span>({{ all_count | default(value=total) }})</span></a></li>
     <li><a href="/wp-admin/edit-comments.php?status=approved" {% if status_filter == "approved" %}class="current"{% endif %}>Approved <span>({{ approved_count }})</span></a></li>
     <li><a href="/wp-admin/edit-comments.php?status=pending" {% if status_filter == "pending" %}class="current"{% endif %}>Pending <span>({{ pending_count }})</span></a></li>
     <li><a href="/wp-admin/edit-comments.php?status=spam" {% if status_filter == "spam" %}class="current"{% endif %}>Spam <span>({{ spam_count }})</span></a></li>
