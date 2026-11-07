@@ -1,4 +1,5 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to keep the post comment count in step with moderation.
+
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -14,7 +15,7 @@ use sea_orm::{
 use serde::{Deserialize, Serialize};
 use tracing::info;
 
-use oxidepress_db::entities::wp_comments;
+use oxidepress_db::entities::{wp_comments, wp_posts};
 
 use crate::AdminState;
 
@@ -121,6 +122,7 @@ async fn update_comment(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
         .ok_or(StatusCode::NOT_FOUND)?;
+    let post_id = comment.comment_post_id;
 
     let mut active: wp_comments::ActiveModel = comment.into();
 
@@ -144,6 +146,8 @@ async fn update_comment(
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    refresh_comment_count(&state.db, post_id).await;
+
     info!(id, "comment updated");
     Ok(Json(to_admin_comment(updated)))
 }
@@ -152,13 +156,39 @@ async fn delete_comment(
     State(state): State<AdminState>,
     Path(id): Path<u64>,
 ) -> Result<StatusCode, StatusCode> {
+    let post_id = wp_comments::Entity::find_by_id(id)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten()
+        .map(|comment| comment.comment_post_id);
+
     wp_comments::Entity::delete_by_id(id)
         .exec(&state.db)
         .await
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
+    if let Some(post_id) = post_id {
+        refresh_comment_count(&state.db, post_id).await;
+    }
+
     info!(id, "comment deleted");
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn refresh_comment_count(db: &sea_orm::DatabaseConnection, post_id: u64) {
+    let count = wp_comments::Entity::find()
+        .filter(wp_comments::Column::CommentPostId.eq(post_id))
+        .filter(wp_comments::Column::CommentApproved.eq("1"))
+        .count(db)
+        .await
+        .unwrap_or(0);
+
+    if let Ok(Some(post)) = wp_posts::Entity::find_by_id(post_id).one(db).await {
+        let mut active: wp_posts::ActiveModel = post.into();
+        active.comment_count = Set(count as i64);
+        let _ = active.update(db).await;
+    }
 }
 
 fn to_admin_comment(c: wp_comments::Model) -> AdminComment {
