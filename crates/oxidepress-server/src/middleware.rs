@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and skip WAF on theme and wp-includes assets.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -352,11 +352,9 @@ pub async fn waf_check(
     let path = request.uri().path().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
 
-    // Skip WAF for static assets and well-known safe paths
-    if path.starts_with("/static/")
-        || path.starts_with("/wp-content/uploads/")
-        || path == "/favicon.ico"
-    {
+    // Theme and wp-includes assets are trusted files. Chrome's Accept header
+    // (`image/*,*/*`) matches the SQL-comment rule, so those paths are not scanned.
+    if waf_exempt_path(&path) {
         return next.run(request).await;
     }
 
@@ -703,6 +701,18 @@ pub fn extract_client_ip(request: &Request) -> String {
         .unwrap_or_else(|| "unknown".to_string())
 }
 
+/// Paths whose requests are not WAF-scanned.
+///
+/// Theme stylesheets, theme images, and `wp-includes` files are build artifacts.
+/// Scanning them flags Chrome's `image/*,*/*` Accept header as a SQL comment.
+fn waf_exempt_path(path: &str) -> bool {
+    path.starts_with("/static/")
+        || path.starts_with("/wp-content/uploads/")
+        || path.starts_with("/wp-content/themes/")
+        || path.starts_with("/wp-includes/")
+        || path == "/favicon.ico"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -711,6 +721,25 @@ mod tests {
     use axum::routing::get;
     use axum::Router;
     use tower::ServiceExt;
+
+    #[test]
+    fn test_waf_exempts_theme_and_wp_includes_assets() {
+        assert!(waf_exempt_path(
+            "/wp-content/themes/twentytwentyfive/assets/image.jpg"
+        ));
+        assert!(waf_exempt_path("/wp-includes/js/jquery/jquery.min.js"));
+        assert!(waf_exempt_path("/static/app.css"));
+        assert!(waf_exempt_path("/wp-content/uploads/2026/11/photo.png"));
+        assert!(waf_exempt_path("/favicon.ico"));
+    }
+
+    #[test]
+    fn test_waf_still_scans_dynamic_paths() {
+        assert!(!waf_exempt_path("/"));
+        assert!(!waf_exempt_path("/wp-admin/index.php"));
+        assert!(!waf_exempt_path("/wp-json/wp/v2/posts"));
+        assert!(!waf_exempt_path("/wp-content/plugins/example/plugin.php"));
+    }
 
     fn security_headers_app() -> Router {
         Router::new()
