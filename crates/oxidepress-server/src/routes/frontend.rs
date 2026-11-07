@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to point theme footer links at real pages.
+// Modified by Vabian124 on 2026-11-07 to put the saved homepage SEO title on the public home page.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -350,12 +350,108 @@ async fn navigation_targets(state: &AppState) -> Vec<(String, String)> {
     targets
 }
 
+async fn with_homepage_seo(state: &AppState, page: Html<String>) -> Html<String> {
+    let title = state
+        .options
+        .get_option("_yoast_wpseo_title-homepage")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    let description = state
+        .options
+        .get_option("_yoast_wpseo_metadesc-homepage")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+    if title.trim().is_empty() && description.trim().is_empty() {
+        return page;
+    }
+    let site_name = state.options.get_blogname().await.unwrap_or_default();
+    let site_description = state
+        .options
+        .get_blogdescription()
+        .await
+        .unwrap_or_default();
+    let separator = state
+        .options
+        .get_option("_yoast_wpseo_separator")
+        .await
+        .ok()
+        .flatten()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "-".to_string());
+    let title = expand_home_seo(title.trim(), &site_name, &site_description, &separator);
+    let description = expand_home_seo(
+        description.trim(),
+        &site_name,
+        &site_description,
+        &separator,
+    );
+    Html(apply_document_head(&page.0, &title, &description))
+}
+
+fn expand_home_seo(
+    template: &str,
+    site_name: &str,
+    site_description: &str,
+    separator: &str,
+) -> String {
+    template
+        .replace("%%sitename%%", site_name)
+        .replace("%%sitedesc%%", site_description)
+        .replace("%%sep%%", separator)
+        .replace("%%title%%", site_name)
+        .trim()
+        .to_string()
+}
+
+pub(crate) fn apply_document_head(html: &str, title: &str, description: &str) -> String {
+    let mut html = html.to_string();
+    if !title.is_empty() {
+        if let Some(start) = html.find("<title>") {
+            if let Some(rel_end) = html[start..].find("</title>") {
+                let end = start + rel_end + "</title>".len();
+                html.replace_range(
+                    start..end,
+                    &format!("<title>{}</title>", escape_text(title)),
+                );
+            }
+        }
+    }
+    if !description.is_empty() {
+        let tag = format!(
+            "<meta name=\"description\" content=\"{}\" />",
+            escape_attr(description)
+        );
+        if let Some(start) = html.find("<meta name=\"description\"") {
+            if let Some(rel_end) = html[start..].find('>') {
+                html.replace_range(start..start + rel_end + 1, &tag);
+            }
+        } else if let Some(idx) = html.find("</title>") {
+            html.insert_str(idx + "</title>".len(), &format!("\n{tag}"));
+        }
+    }
+    html
+}
+
+fn escape_text(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn escape_attr(value: &str) -> String {
+    escape_text(value).replace('"', "&quot;")
+}
+
 pub(crate) fn link_placeholder_nav(html: &str, targets: &[(String, String)]) -> String {
     let mut html = html.to_string();
     for (label, url) in targets {
-        let from = format!(
-            "href=\"#\"><span class=\"wp-block-navigation-item__label\">{label}</span>"
-        );
+        let from =
+            format!("href=\"#\"><span class=\"wp-block-navigation-item__label\">{label}</span>");
         let safe_url = url.replace('"', "%22");
         let to = format!(
             "href=\"{safe_url}\"><span class=\"wp-block-navigation-item__label\">{label}</span>"
@@ -583,7 +679,11 @@ async fn front_page(
         PageType::Home
     };
 
-    let result = render_theme_page(&state, &page_type, &context).await?;
+    let result = with_homepage_seo(
+        &state,
+        render_theme_page(&state, &page_type, &context).await?,
+    )
+    .await;
 
     // Store in cache
     state
@@ -776,7 +876,11 @@ async fn front_page_or_query(
             Err(e) => return conv(Err(e)),
         };
         insert_posts_context_with_hooks(&mut context, &posts, &pagination, Some(&state.hooks));
-        return conv(render_theme_page(&state, &PageType::Home, &context).await);
+        let rendered = match render_theme_page(&state, &PageType::Home, &context).await {
+            Ok(html) => html,
+            Err(error) => return conv(Err(error)),
+        };
+        return conv(Ok(with_homepage_seo(&state, rendered).await));
     }
 
     // ?m=YYYYMM or ?m=YYYYMMDD — date archive via query param → redirect to /YYYY/MM/
@@ -816,7 +920,11 @@ async fn paginated_home(
     let mut context = build_base_context(&state).await;
     let (posts, pagination) = get_posts_page(&state, page).await?;
     insert_posts_context_with_hooks(&mut context, &posts, &pagination, Some(&state.hooks));
-    render_theme_page(&state, &PageType::Home, &context).await
+    Ok(with_homepage_seo(
+        &state,
+        render_theme_page(&state, &PageType::Home, &context).await?,
+    )
+    .await)
 }
 
 async fn single_by_slug(
@@ -2778,6 +2886,16 @@ mod tests {
         let qv: WpQueryVars =
             serde_urlencoded::from_str("s=hello").expect("should parse without author");
         assert!(qv.author.is_none());
+    }
+
+    #[test]
+    fn homepage_seo_replaces_the_title_and_adds_a_description() {
+        let html = "<head><title>OxidePress &#8211; Just another OxidePress site</title></head>";
+        let updated =
+            super::apply_document_head(html, "Linen Workshop", "Stoneware from a small workshop.");
+        assert!(updated.contains("<title>Linen Workshop</title>"));
+        assert!(updated.contains("content=\"Stoneware from a small workshop.\""));
+        assert!(!updated.contains("Just another OxidePress site"));
     }
 
     #[test]
