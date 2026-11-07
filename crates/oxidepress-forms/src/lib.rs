@@ -19,7 +19,7 @@ pub mod submission;
 pub mod validation;
 
 pub use builder::{FieldConfig, FormBuilder, FormConfig, FormField};
-pub use cf7_compat::Cf7FormData;
+pub use cf7_compat::{render_stored_contact_form, Cf7FormData};
 pub use notification::{
     default_notification_config, AutoReplyConfig, EmailMessage, EmailSender, LogEmailSender,
     NotificationConfig, NotificationProcessor, NotificationResult,

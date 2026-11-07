@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to render a stored contact form.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Contact Form 7 compatibility layer.
@@ -128,6 +128,9 @@ impl Cf7FormData {
 
         for tag in &tags {
             if tag.tag_type == "submit" {
+                if let Some(label) = tag.options.first() {
+                    builder = builder.submit_label(label);
+                }
                 continue;
             }
 
@@ -154,6 +157,24 @@ impl Cf7FormData {
         }
 
         builder.build()
+    }
+
+    /// Build form data from the template stored on the contact form post.
+    pub fn from_template(post_id: u64, title: &str, template: &str) -> Self {
+        Self {
+            post_id,
+            title: title.to_string(),
+            form_template: template.to_string(),
+            mail_to: String::new(),
+            mail_from: String::new(),
+            mail_subject: String::new(),
+            mail_body: String::new(),
+            mail_2_active: false,
+            mail_2_to: String::new(),
+            mail_2_subject: String::new(),
+            mail_2_body: String::new(),
+            messages: HashMap::new(),
+        }
     }
 
     /// Convert to a OxidePress NotificationConfig.
@@ -189,6 +210,17 @@ impl Cf7FormData {
             auto_reply,
         }
     }
+}
+
+/// Render a stored Contact Form 7 template as HTML.
+pub fn render_stored_contact_form(
+    post_id: u64,
+    title: &str,
+    template: &str,
+    action_url: &str,
+) -> String {
+    let data = Cf7FormData::from_template(post_id, title, template);
+    crate::renderer::render_form(&data.to_form_config(), action_url)
 }
 
 /// Parse CF7 bracket tags from a form template string.
@@ -467,6 +499,22 @@ mod tests {
         assert!(!tags[3].required);
 
         assert_eq!(tags[4].tag_type, "submit");
+        assert_eq!(tags[4].options.first().map(String::as_str), Some("Send"));
+    }
+
+    #[test]
+    fn stored_contact_form_renders_its_fields() {
+        let html = render_stored_contact_form(
+            7,
+            "Ask the workshop",
+            "[text* your-name]\n[email* your-email]\n[submit \"Send\"]",
+            "/forms/cf7_7/submit",
+        );
+        assert!(html.contains("name=\"your-name\""));
+        assert!(html.contains("name=\"your-email\""));
+        assert!(html.contains("required"));
+        assert!(html.contains(">Send</button>"));
+        assert!(html.contains("action=\"/forms/cf7_7/submit\""));
     }
 
     #[test]
