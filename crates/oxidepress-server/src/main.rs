@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to register the contact form shortcode.
+// Modified by Vabian124 on 2026-11-07 to restore active plugins after a restart.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -123,6 +123,7 @@ async fn main() -> Result<()> {
     if let Err(e) = plugin_loader.scan_and_register(&plugin_registry).await {
         tracing::warn!("Plugin scan failed: {}", e);
     }
+    restore_active_plugins(&options, &plugin_registry).await;
 
     let site_url = options
         .get_siteurl()
@@ -619,6 +620,36 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+async fn restore_active_plugins(
+    options: &oxidepress_db::options::OptionsManager,
+    registry: &oxidepress_plugins::PluginRegistry,
+) {
+    let Ok(Some(raw)) = options.get_option("active_plugins").await else {
+        return;
+    };
+    let names = if let Ok(value) = oxidepress_core::php_unserialize(&raw) {
+        let parsed = value.as_string_list();
+        if parsed.is_empty() && !raw.trim().is_empty() && !raw.starts_with("a:") {
+            raw.split(',')
+                .map(|name| name.trim().to_string())
+                .filter(|name| !name.is_empty())
+                .collect()
+        } else {
+            parsed
+        }
+    } else {
+        raw.split(',')
+            .map(|name| name.trim().to_string())
+            .filter(|name| !name.is_empty())
+            .collect()
+    };
+    for name in names {
+        if let Err(error) = registry.activate(&name).await {
+            tracing::debug!(%error, %name, "stored plugin was not discovered");
+        }
+    }
 }
 
 async fn load_contact_forms(
