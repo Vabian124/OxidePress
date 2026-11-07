@@ -1,4 +1,5 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and stop printing the generated admin password.
+// Modified by Vabian124 on 2026-11-07 to render store pages in the active theme.
+
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use anyhow::Result;
@@ -158,6 +159,17 @@ async fn main() -> Result<()> {
 
     // Register i18n functions on the theme engine's Tera instance
     i18n::register_tera_i18n_functions(theme_engine.tera_mut(), &translations);
+    theme_engine
+        .tera_mut()
+        .add_raw_template(
+            "oxidepress-content.html",
+            r#"{% extends "base.html" %}
+{% block title %}{{ page_title }} &#8211; {{ site_name }}{% endblock %}
+{% block body_class %}{{ body_class }}{% endblock %}
+{% block content %}{{ page_content | safe }}{% endblock %}
+"#,
+        )
+        .expect("content template");
     let theme_engine = Arc::new(RwLock::new(theme_engine));
 
     // Initialize admin template engine
@@ -582,6 +594,8 @@ async fn main() -> Result<()> {
         ));
         info!("Multisite middleware active");
     }
+
+    routes::frontend::ensure_footer_pages(&state).await;
 
     // Fire init hook
     state.hooks.do_action("init", &serde_json::json!({}));

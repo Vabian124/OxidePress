@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and sell published products from the database.
+// Modified by Vabian124 on 2026-11-07 to render the shop inside the active theme.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -77,42 +77,27 @@ fn esc(value: &str) -> String {
         .replace('"', "&quot;")
 }
 
-fn shop_document(title: &str, body: &str) -> String {
+fn shop_markup(body: &str) -> String {
     format!(
-        r#"<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<title>{title} – OxidePress</title>
-<style>
-body {{ font-family: Georgia, serif; margin: 0; color: #1d2327; background: #f6f7f7; }}
-header, main, footer {{ max-width: 960px; margin: 0 auto; padding: 1.25rem; }}
-header {{ display: flex; justify-content: space-between; align-items: center; background: #fff; }}
-nav a {{ margin-left: 1rem; color: #1d2327; }}
-.products {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }}
-.product, .single-product {{ background: #fff; padding: 1rem; border: 1px solid #dcdcde; }}
-.product img, .single-product img {{ width: 100%; height: 180px; object-fit: cover; background: #f0f0f1; }}
-.price {{ font-size: 1.2rem; }}
-.price del {{ color: #646970; margin-right: 0.4rem; }}
-button, .button {{ background: #2271b1; color: #fff; border: 0; padding: 0.6rem 1rem; cursor: pointer; text-decoration: none; display: inline-block; }}
-table {{ width: 100%; border-collapse: collapse; background: #fff; }}
-th, td {{ padding: 0.6rem; border-bottom: 1px solid #dcdcde; text-align: left; }}
+        r#"<style>
+.oxide-shop .products {{ display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem; }}
+.oxide-shop .product, .oxide-shop .single-product {{ padding: 1rem; border: 1px solid #dcdcde; }}
+.oxide-shop img {{ width: 100%; height: auto; display: block; }}
+.oxide-shop .price del {{ color: #646970; margin-right: 0.4rem; }}
+.oxide-shop table {{ width: 100%; border-collapse: collapse; }}
+.oxide-shop th, .oxide-shop td {{ padding: 0.6rem; border-bottom: 1px solid #dcdcde; text-align: left; }}
+.oxide-shop button, .oxide-shop .button {{ background: #111; color: #fff; border: 0; padding: 0.6rem 1rem; cursor: pointer; text-decoration: none; display: inline-block; }}
+.oxide-shop .checkout-form {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+.oxide-shop .checkout-form label {{ display: block; font-weight: 600; margin-bottom: 0.25rem; }}
+.oxide-shop .checkout-form input, .oxide-shop .checkout-form select {{ width: 100%; padding: 0.5rem; box-sizing: border-box; }}
+.oxide-shop .full-width {{ grid-column: 1 / -1; }}
 </style>
-</head>
-<body>
-<header>
-  <strong><a href="/">OxidePress</a></strong>
-  <nav>
-    <a href="/shop">Shop</a>
-    <a href="/about/">About</a>
-    <a href="/shipping/">Shipping</a>
-    <a href="/cart">Cart</a>
-  </nav>
-</header>
-<main>{body}</main>
-</body>
-</html>"#
+<div class="oxide-shop">{body}</div>"#
     )
+}
+
+async fn present(state: &AppState, title: &str, body_class: &str, body: &str) -> Html<String> {
+    super::frontend::render_themed_document(state, title, body_class, &shop_markup(body)).await
 }
 
 async fn published_products(state: &AppState) -> Vec<woo_compat::WooProductData> {
@@ -196,7 +181,7 @@ async fn shop_page(State(state): State<Arc<AppState>>) -> Html<String> {
         }
         body.push_str("</div>");
     }
-    Html(shop_document("Shop", &body))
+    present(&state, "Shop", "oxide-shop", &body).await
 }
 
 async fn product_page(
@@ -223,7 +208,7 @@ async fn product_page(
         description = esc(&product.description),
         id = product.post_id,
     );
-    Ok(Html(shop_document(&product.name, &body)))
+    Ok(present(&state, &product.name, "oxide-product", &body).await)
 }
 
 async fn add_product_to_cart(state: &AppState, key: &str, product_id: u64, quantity: u32) -> bool {
@@ -290,7 +275,7 @@ async fn cart_page(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Ht
         r#"<h1>Cart</h1><p>Your cart is empty.</p><p><a href="/shop">Continue shopping</a></p>"#
             .to_string()
     };
-    Html(shop_document("Cart", &body))
+    present(&state, "Cart", "oxide-cart", &body).await
 }
 
 async fn cart_add(
@@ -382,42 +367,19 @@ async fn checkout_page(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         (String::new(), 0.0)
     };
 
-    let page = format!(
-        r#"<!DOCTYPE html>
-<html>
-<head><title>Checkout - OxidePress</title>
-<style>
-body {{ font-family: sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; }}
-h1 {{ border-bottom: 2px solid #333; padding-bottom: 10px; }}
-table {{ width: 100%; border-collapse: collapse; margin-bottom: 20px; }}
-th, td {{ padding: 8px 12px; border: 1px solid #ddd; text-align: left; }}
-th {{ background: #f5f5f5; }}
-.checkout-form {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-.checkout-form label {{ display: block; font-weight: bold; margin-bottom: 4px; }}
-.checkout-form input, .checkout-form select {{ width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }}
-.full-width {{ grid-column: 1 / -1; }}
-.total-row {{ font-weight: bold; font-size: 1.2em; }}
-button[type="submit"] {{ padding: 12px 24px; background: #0073aa; color: white; border: none; border-radius: 4px; font-size: 1.1em; cursor: pointer; margin-top: 16px; }}
-button[type="submit"]:hover {{ background: #005a87; }}
-.empty-cart {{ padding: 40px; text-align: center; color: #666; }}
-</style>
-</head>
-<body>
-<h1>Checkout</h1>
-{cart_section}
-</body>
-</html>"#,
+    let body = format!(
+        r#"<h1>Checkout</h1>
+{cart_section}"#,
         cart_section = if total == 0.0 {
-            r#"<div class="empty-cart"><p>Your cart is empty.</p><p><a href="/shop">Continue Shopping</a></p></div>"#.to_string()
+            r#"<p>Your cart is empty. <a href="/shop">Continue shopping</a>.</p>"#.to_string()
         } else {
             format!(
                 r#"<h2>Order Summary</h2>
 <table>
 <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
 <tbody>{items_html}</tbody>
-<tfoot><tr class="total-row"><td colspan="3">Total</td><td>${total:.2}</td></tr></tfoot>
+<tfoot><tr><td colspan="3">Total</td><td>${total:.2}</td></tr></tfoot>
 </table>
-
 <h2>Billing Details</h2>
 <form id="checkout-form" class="checkout-form">
   <div><label for="name">Full Name</label><input type="text" id="name" name="name" required></div>
@@ -472,7 +434,7 @@ document.getElementById('checkout-form').addEventListener('submit', function(e) 
             )
         }
     );
-    Html(page)
+    present(&state, "Checkout", "oxide-checkout", &body).await
 }
 
 async fn checkout_submit(
@@ -635,45 +597,21 @@ async fn thank_you_page(
     );
 
     let html = format!(
-        r#"<!DOCTYPE html>
-<html>
-<head><title>Order Confirmed - OxidePress</title>
-<style>
-body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
-h1 {{ color: #2e7d32; }}
-table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-th, td {{ padding: 8px 12px; border: 1px solid #ddd; text-align: left; }}
-th {{ background: #f5f5f5; }}
-.order-meta {{ background: #f9f9f9; padding: 16px; border-radius: 8px; margin: 16px 0; }}
-.order-meta p {{ margin: 4px 0; }}
-.total-row {{ font-weight: bold; }}
-</style>
-</head>
-<body>
-<h1>Thank You for Your Order!</h1>
-<div class="order-meta">
-  <p><strong>Order Number:</strong> {order_number}</p>
-  <p><strong>Order ID:</strong> {order_id}</p>
-  <p><strong>Status:</strong> {status}</p>
-  <p><strong>Payment Method:</strong> {payment_method}</p>
-  <p><strong>Date:</strong> {date}</p>
-</div>
-
-<h2>Order Details</h2>
+        r#"<h1>Thank you for your order</h1>
+<p><strong>Order number:</strong> {order_number}<br>
+<strong>Status:</strong> {status}<br>
+<strong>Payment:</strong> {payment_method}<br>
+<strong>Date:</strong> {date}</p>
+<h2>Order details</h2>
 <table>
 <thead><tr><th>Product</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
 <tbody>{items_html}</tbody>
-<tfoot><tr class="total-row"><td colspan="3">Order Total</td><td>${total:.2}</td></tr></tfoot>
+<tfoot><tr><td colspan="3">Order total</td><td>${total:.2}</td></tr></tfoot>
 </table>
-
-<h2>Billing Address</h2>
+<h2>Billing address</h2>
 <p>{billing_name}<br>{billing_address}<br>{billing_city}, {billing_state} {billing_zip}<br>{billing_country}<br>{billing_email}</p>
-
-<p><a href="/shop">Continue Shopping</a></p>
-</body>
-</html>"#,
+<p><a href="/shop">Continue shopping</a></p>"#,
         order_number = order.order_number,
-        order_id = order.id,
         status = order.status,
         payment_method = order.payment_method,
         date = order.created_at.format("%B %e, %Y %H:%M"),
@@ -688,7 +626,7 @@ th {{ background: #f5f5f5; }}
         billing_email = order.billing_address.email,
     );
 
-    Ok(Html(html))
+    Ok(present(&state, "Order confirmed", "oxide-order", &html).await)
 }
 
 async fn orders_list(State(state): State<Arc<AppState>>) -> impl IntoResponse {

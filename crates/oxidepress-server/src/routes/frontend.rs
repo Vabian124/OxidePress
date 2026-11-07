@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and render the current post inside theme blocks.
+// Modified by Vabian124 on 2026-11-07 to point theme footer links at real pages.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -289,13 +289,137 @@ async fn render_theme_page(
 ) -> Result<Html<String>, (StatusCode, Html<String>)> {
     let engine = state.theme_engine.read().await;
     match engine.render_page(page_type, context) {
-        Ok(html) => Ok(Html(html)),
+        Ok(html) => Ok(Html(link_rendered_navigation(state, html).await)),
         Err(e) => {
             tracing::error!("Template render error: {}", e);
             Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 Html(format!("<h1>Render Error</h1><pre>{e}</pre>")),
             ))
+        }
+    }
+}
+
+pub(crate) async fn render_themed_document(
+    state: &AppState,
+    title: &str,
+    body_class: &str,
+    content: &str,
+) -> Html<String> {
+    let mut context = build_base_context(state).await;
+    context.insert("page_title", title);
+    context.insert("body_class", body_class);
+    context.insert("page_content", content);
+    let engine = state.theme_engine.read().await;
+    match engine.render("oxidepress-content.html", &context) {
+        Ok(html) => Html(link_rendered_navigation(state, html).await),
+        Err(error) => {
+            tracing::error!("Template render error: {error}");
+            Html(format!("<h1>Render Error</h1><pre>{error}</pre>"))
+        }
+    }
+}
+
+async fn link_rendered_navigation(state: &AppState, html: String) -> String {
+    let targets = navigation_targets(state).await;
+    link_placeholder_nav(&html, &targets)
+}
+
+async fn navigation_targets(state: &AppState) -> Vec<(String, String)> {
+    let root = state.site_url.trim_end_matches('/').to_string();
+    let mut targets = vec![
+        ("Blog".to_string(), format!("{root}/")),
+        ("Shop".to_string(), format!("{root}/shop")),
+        ("Cart".to_string(), format!("{root}/cart")),
+    ];
+    let pages = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("page"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let rewrite = state.rewrite_rules.read().await;
+    for page in pages {
+        if targets.iter().any(|(label, _)| label == &page.post_title) {
+            continue;
+        }
+        let permalink =
+            PostTemplateData::from_model_with_rewrite(&page, &state.site_url, &rewrite).permalink;
+        targets.push((page.post_title, permalink));
+    }
+    targets
+}
+
+pub(crate) fn link_placeholder_nav(html: &str, targets: &[(String, String)]) -> String {
+    let mut html = html.to_string();
+    for (label, url) in targets {
+        let from = format!(
+            "href=\"#\"><span class=\"wp-block-navigation-item__label\">{label}</span>"
+        );
+        let safe_url = url.replace('"', "%22");
+        let to = format!(
+            "href=\"{safe_url}\"><span class=\"wp-block-navigation-item__label\">{label}</span>"
+        );
+        html = html.replace(&from, &to);
+    }
+    html
+}
+
+pub(crate) async fn ensure_footer_pages(state: &AppState) {
+    let pages = [
+        (
+            "faqs",
+            "FAQs",
+            "Orders ship in two business days. Free over $50.",
+        ),
+        (
+            "authors",
+            "Authors",
+            "Posts on this site are written by the site authors.",
+        ),
+        (
+            "events",
+            "Events",
+            "Workshops and sales will be listed here.",
+        ),
+        (
+            "patterns",
+            "Patterns",
+            "Block patterns from the active theme are available in the editor.",
+        ),
+        (
+            "themes",
+            "Themes",
+            "This site is displayed with the Twenty Twenty-Five theme.",
+        ),
+    ];
+    for (slug, title, content) in pages {
+        let existing = wp_posts::Entity::find()
+            .filter(wp_posts::Column::PostType.eq("page"))
+            .filter(wp_posts::Column::PostName.eq(slug))
+            .one(&state.db)
+            .await;
+        if existing.ok().flatten().is_some() {
+            continue;
+        }
+        let now = chrono::Utc::now().naive_utc();
+        let page = wp_posts::ActiveModel {
+            post_author: Set(1),
+            post_date: Set(now),
+            post_date_gmt: Set(now),
+            post_content: Set(content.to_string()),
+            post_title: Set(title.to_string()),
+            post_excerpt: Set(String::new()),
+            post_status: Set("publish".into()),
+            post_name: Set(slug.to_string()),
+            post_modified: Set(now),
+            post_modified_gmt: Set(now),
+            post_type: Set("page".into()),
+            post_parent: Set(0),
+            ..Default::default()
+        };
+        if let Err(error) = page.insert(&state.db).await {
+            tracing::warn!(slug, error = %error, "footer page was not created");
         }
     }
 }
@@ -2654,5 +2778,16 @@ mod tests {
         let qv: WpQueryVars =
             serde_urlencoded::from_str("s=hello").expect("should parse without author");
         assert!(qv.author.is_none());
+    }
+
+    #[test]
+    fn footer_placeholder_links_use_their_label() {
+        let html = "<a class=\"wp-block-navigation-item__content\" href=\"#\"><span class=\"wp-block-navigation-item__label\">Shop</span></a>";
+        let linked = super::link_placeholder_nav(
+            html,
+            &[("Shop".to_string(), "http://127.0.0.1:3000/shop".to_string())],
+        );
+        assert!(linked.contains("href=\"http://127.0.0.1:3000/shop\""));
+        assert!(!linked.contains("href=\"#\""));
     }
 }

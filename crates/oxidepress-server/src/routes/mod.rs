@@ -5,7 +5,7 @@ use tower_http::trace::TraceLayer;
 mod auth;
 pub mod commerce;
 pub mod forms;
-mod frontend;
+pub(crate) mod frontend;
 pub mod health;
 pub mod plugin_admin;
 mod posts;
