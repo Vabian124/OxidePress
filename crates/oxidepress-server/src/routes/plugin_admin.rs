@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to render the SEO, fields, forms, and security screens.
+// Modified by Vabian124 on 2026-11-07 to store the SEO sitemap checkboxes.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -626,10 +626,21 @@ struct SeoSettingsForm {
     seo_noindex_empty_cat: Option<String>,
     seo_og_default_image: Option<String>,
     seo_og_enabled: Option<String>,
-    #[allow(dead_code)]
     seo_sitemap_posts: Option<String>,
-    #[allow(dead_code)]
     seo_sitemap_pages: Option<String>,
+}
+
+pub(crate) async fn option_is_on(state: &AppState, key: &str) -> bool {
+    !matches!(
+        state
+            .options
+            .get_option(key)
+            .await
+            .ok()
+            .flatten()
+            .as_deref(),
+        Some("0")
+    )
 }
 
 async fn seo_settings_page(
@@ -714,8 +725,10 @@ async fn seo_settings_page(
     ctx.insert("noindex_empty_cat", &noindex_empty_cat);
     ctx.insert("og_default_image", &og_default_image);
     ctx.insert("og_enabled", &og_enabled);
-    ctx.insert("sitemap_posts", &true);
-    ctx.insert("sitemap_pages", &true);
+    let sitemap_posts = option_is_on(&state, "_yoast_wpseo_sitemap-posts").await;
+    let sitemap_pages = option_is_on(&state, "_yoast_wpseo_sitemap-pages").await;
+    ctx.insert("sitemap_posts", &sitemap_posts);
+    ctx.insert("sitemap_pages", &sitemap_pages);
     ctx.insert("indexed_posts", &indexed_posts);
     ctx.insert("indexed_pages", &indexed_pages);
     ctx.insert("posts_with_desc", &posts_with_desc);
@@ -764,6 +777,22 @@ async fn seo_settings_save(
         (
             "_yoast_wpseo_opengraph",
             if form.seo_og_enabled.is_some() {
+                "1".into()
+            } else {
+                "0".into()
+            },
+        ),
+        (
+            "_yoast_wpseo_sitemap-posts",
+            if form.seo_sitemap_posts.is_some() {
+                "1".into()
+            } else {
+                "0".into()
+            },
+        ),
+        (
+            "_yoast_wpseo_sitemap-pages",
+            if form.seo_sitemap_pages.is_some() {
                 "1".into()
             } else {
                 "0".into()

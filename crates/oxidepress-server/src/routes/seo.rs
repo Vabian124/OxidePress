@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to honor the SEO sitemap checkboxes.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -47,7 +47,18 @@ async fn sitemap_xml(State(state): State<Arc<AppState>>) -> impl IntoResponse {
         priority: Some(1.0),
     });
 
+    let include_posts =
+        super::plugin_admin::option_is_on(&state, "_yoast_wpseo_sitemap-posts").await;
+    let include_pages =
+        super::plugin_admin::option_is_on(&state, "_yoast_wpseo_sitemap-pages").await;
+
     for post in posts {
+        if post.post_type == "post" && !include_posts {
+            continue;
+        }
+        if post.post_type == "page" && !include_pages {
+            continue;
+        }
         let permalink = format!("{}/{}", state.site_url, post.post_name);
         let lastmod = post.post_modified_gmt.format("%Y-%m-%d").to_string();
         let (changefreq, priority) = if post.post_type == "page" {
