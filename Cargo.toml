@@ -1,4 +1,5 @@
 # Modified by Vabian124 on 2026-11-07 to add the plugin rustify crate.
+# Modified by Vabian124 on 2026-11-07 to add the PHP plugin runtime crate.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [workspace]
@@ -27,6 +28,7 @@ members = [
     "crates/oxidepress-i18n",
     "crates/oxidepress-blocks",
     "crates/oxidepress-rustify",
+    "crates/oxidepress-php",
 ]
 
 [workspace.package]
@@ -64,6 +66,7 @@ oxidepress-i18n = { path = "crates/oxidepress-i18n" }
 oxidepress-blocks = { path = "crates/oxidepress-blocks" }
 oxidepress-commerce = { path = "crates/oxidepress-commerce" }
 oxidepress-rustify = { path = "crates/oxidepress-rustify" }
+oxidepress-php = { path = "crates/oxidepress-php" }
 
 # Web framework
 axum = "0.8"

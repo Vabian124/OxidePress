@@ -1,0 +1,1057 @@
+<?php
+// Modified by Vabian124 on 2026-11-07 to host WordPress plugins inside OxidePress.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
+//
+// Long-lived plugin worker. Rust sends length-prefixed JSON requests on STDIN.
+// A request may nest: this process writes a "call" frame and reads a "result"
+// frame before it writes the final "ok" frame. Echoed plugin output is buffered
+// so it never mixes with those frames.
+
+ini_set('display_errors', 'stderr');
+ini_set('display_startup_errors', '0');
+ini_set('html_errors', '0');
+error_reporting(E_ALL);
+if (function_exists('stream_set_write_buffer')) {
+    stream_set_write_buffer(STDOUT, 0);
+}
+if (function_exists('stream_set_read_buffer')) {
+    stream_set_read_buffer(STDIN, 0);
+}
+
+$oxidepress_callbacks = array();
+$oxidepress_batch = array();
+$oxidepress_hooks = array('action' => array(), 'filter' => array());
+$oxidepress_shortcodes = array();
+$oxidepress_disabled = array();
+$oxidepress_request_id = 0;
+$oxidepress_plugin_file = '';
+$oxidepress_fatal_sent = false;
+$oxidepress_did = array();
+$GLOBALS['wp_version'] = '6.8.3';
+
+$oxidepress_plugins_dir = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
+if (!defined('ABSPATH')) {
+    if ($oxidepress_plugins_dir !== '') {
+        define('ABSPATH', rtrim(str_replace('\\', '/', $oxidepress_plugins_dir), '/') . '/');
+    } else {
+        define('ABSPATH', rtrim(str_replace('\\', '/', getcwd()), '/') . '/');
+    }
+}
+if (!defined('WPINC')) {
+    define('WPINC', 'wp-includes');
+}
+
+register_shutdown_function('oxidepress_shutdown');
+
+while (true) {
+    try {
+        $frame = oxidepress_read_frame();
+    } catch (Throwable $read_error) {
+        oxidepress_write_frame(array(
+            'id' => $oxidepress_request_id,
+            'ok' => false,
+            'error' => $read_error->getMessage(),
+        ));
+        continue;
+    }
+    if ($frame === null) {
+        exit(0);
+    }
+
+    $oxidepress_request_id = isset($frame['id']) ? $frame['id'] : 0;
+    $op = isset($frame['op']) ? (string)$frame['op'] : '';
+
+    try {
+        if ($op === 'load') {
+            $oxidepress_batch = array();
+            $path = isset($frame['path']) ? (string)$frame['path'] : '';
+            $oxidepress_plugin_file = $path;
+            if ($path === '' || !is_file($path)) {
+                throw new RuntimeException('plugin file not found: ' . $path);
+            }
+            ob_start();
+            try {
+                include $path;
+                if (ob_get_level() > 0) {
+                    ob_end_clean();
+                }
+            } catch (Throwable $load_error) {
+                if (ob_get_level() > 0) {
+                    ob_end_clean();
+                }
+                throw $load_error;
+            }
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => true,
+                'registrations' => array_values($oxidepress_batch),
+            ));
+        } elseif ($op === 'invoke') {
+            oxidepress_invoke($frame);
+        } elseif ($op === 'shutdown') {
+            exit(0);
+        } else {
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => false,
+                'error' => 'unknown op',
+            ));
+        }
+    } catch (Throwable $error) {
+        oxidepress_write_frame(array(
+            'id' => $oxidepress_request_id,
+            'ok' => false,
+            'error' => $error->getMessage(),
+        ));
+    }
+}
+
+function oxidepress_invoke($frame)
+{
+    global $oxidepress_callbacks, $oxidepress_disabled, $oxidepress_request_id;
+
+    $id = $oxidepress_request_id;
+    $kind = isset($frame['kind']) ? (string)$frame['kind'] : 'action';
+    $cb_id = isset($frame['callback_id']) ? (int)$frame['callback_id'] : -1;
+
+    if (!array_key_exists($cb_id, $oxidepress_callbacks)) {
+        oxidepress_write_frame(array(
+            'id' => $id,
+            'ok' => false,
+            'error' => 'unknown callback ' . $cb_id,
+        ));
+        return;
+    }
+
+    if (!empty($oxidepress_disabled[$cb_id])) {
+        if ($kind === 'filter') {
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'value' => array_key_exists('value', $frame) ? $frame['value'] : null,
+                'output' => '',
+            ));
+        } elseif ($kind === 'shortcode') {
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'value' => '',
+                'output' => '',
+            ));
+        } else {
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'output' => '',
+            ));
+        }
+        return;
+    }
+
+    $callback = $oxidepress_callbacks[$cb_id];
+    ob_start();
+    try {
+        if ($kind === 'filter') {
+            $value = array_key_exists('value', $frame) ? $frame['value'] : null;
+            $result = call_user_func($callback, $value);
+            $output = oxidepress_capture_output();
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'value' => $result,
+                'output' => $output,
+            ));
+        } elseif ($kind === 'shortcode') {
+            $atts = isset($frame['atts']) && is_array($frame['atts']) ? $frame['atts'] : array();
+            $content = isset($frame['content']) ? (string)$frame['content'] : '';
+            $tag = isset($frame['tag']) ? (string)$frame['tag'] : '';
+            $result = call_user_func($callback, $atts, $content, $tag);
+            $output = oxidepress_capture_output();
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'value' => $result,
+                'output' => $output,
+            ));
+        } else {
+            $args = array_key_exists('args', $frame) ? $frame['args'] : null;
+            call_user_func($callback, $args);
+            $output = oxidepress_capture_output();
+            oxidepress_write_frame(array(
+                'id' => $id,
+                'ok' => true,
+                'output' => $output,
+            ));
+        }
+    } catch (Throwable $error) {
+        oxidepress_capture_output();
+        oxidepress_write_frame(array(
+            'id' => $id,
+            'ok' => false,
+            'error' => $error->getMessage(),
+        ));
+    }
+}
+
+function oxidepress_capture_output()
+{
+    if (ob_get_level() < 1) {
+        return '';
+    }
+    $output = ob_get_clean();
+    return $output === false ? '' : $output;
+}
+
+function oxidepress_register($kind, $tag, $callback, $priority, $accepted_args)
+{
+    global $oxidepress_callbacks, $oxidepress_batch, $oxidepress_hooks, $oxidepress_shortcodes;
+
+    $id = count($oxidepress_callbacks);
+    $oxidepress_callbacks[] = $callback;
+    $priority = (int)$priority;
+    $tag = (string)$tag;
+    $oxidepress_batch[] = array(
+        'kind' => $kind,
+        'tag' => $tag,
+        'callback_id' => $id,
+        'priority' => $priority,
+    );
+    if ($kind === 'action' || $kind === 'filter') {
+        if (!isset($oxidepress_hooks[$kind][$tag])) {
+            $oxidepress_hooks[$kind][$tag] = array();
+        }
+        $oxidepress_hooks[$kind][$tag][] = array(
+            'id' => $id,
+            'priority' => $priority,
+            'accepted_args' => (int)$accepted_args,
+        );
+    } elseif ($kind === 'shortcode') {
+        $oxidepress_shortcodes[$tag] = $id;
+    }
+    return $id;
+}
+
+function oxidepress_remove($kind, $tag, $callback, $priority)
+{
+    global $oxidepress_callbacks, $oxidepress_hooks, $oxidepress_disabled, $oxidepress_batch;
+
+    $tag = (string)$tag;
+    $priority = (int)$priority;
+    if (!isset($oxidepress_hooks[$kind][$tag])) {
+        return false;
+    }
+
+    $kept = array();
+    $removed_id = null;
+    foreach ($oxidepress_hooks[$kind][$tag] as $entry) {
+        $existing = $oxidepress_callbacks[$entry['id']];
+        if ($removed_id === null
+            && (int)$entry['priority'] === $priority
+            && oxidepress_same_callback($existing, $callback)
+        ) {
+            $removed_id = $entry['id'];
+            $oxidepress_disabled[$entry['id']] = true;
+            continue;
+        }
+        $kept[] = $entry;
+    }
+    $oxidepress_hooks[$kind][$tag] = $kept;
+    if ($removed_id === null) {
+        return false;
+    }
+
+    $batch = array();
+    foreach ($oxidepress_batch as $reg) {
+        if ((int)$reg['callback_id'] !== (int)$removed_id) {
+            $batch[] = $reg;
+        }
+    }
+    $oxidepress_batch = $batch;
+    return true;
+}
+
+function oxidepress_same_callback($left, $right)
+{
+    if (is_string($left) && is_string($right)) {
+        return strcasecmp($left, $right) === 0;
+    }
+    return $left === $right;
+}
+
+function oxidepress_by_priority($left, $right)
+{
+    if ($left['priority'] == $right['priority']) {
+        return 0;
+    }
+    return ($left['priority'] < $right['priority']) ? -1 : 1;
+}
+
+function add_action($tag, $callback, $priority = 10, $accepted_args = 1)
+{
+    oxidepress_register('action', $tag, $callback, $priority, $accepted_args);
+    return true;
+}
+
+function add_filter($tag, $callback, $priority = 10, $accepted_args = 1)
+{
+    oxidepress_register('filter', $tag, $callback, $priority, $accepted_args);
+    return true;
+}
+
+function remove_action($tag, $callback, $priority = 10)
+{
+    return oxidepress_remove('action', $tag, $callback, $priority);
+}
+
+function remove_filter($tag, $callback, $priority = 10)
+{
+    return oxidepress_remove('filter', $tag, $callback, $priority);
+}
+
+function do_action($tag, ...$args)
+{
+    global $oxidepress_hooks, $oxidepress_callbacks, $oxidepress_disabled, $oxidepress_did;
+
+    $tag = (string)$tag;
+    if (!isset($oxidepress_did[$tag])) {
+        $oxidepress_did[$tag] = 0;
+    }
+    $oxidepress_did[$tag]++;
+    $entries = isset($oxidepress_hooks['action'][$tag]) ? $oxidepress_hooks['action'][$tag] : array();
+    usort($entries, 'oxidepress_by_priority');
+    foreach ($entries as $entry) {
+        if (!empty($oxidepress_disabled[$entry['id']])) {
+            continue;
+        }
+        $accepted = isset($entry['accepted_args']) ? (int)$entry['accepted_args'] : count($args);
+        call_user_func_array($oxidepress_callbacks[$entry['id']], array_slice($args, 0, $accepted));
+    }
+}
+
+function apply_filters($tag, $value, ...$extra)
+{
+    global $oxidepress_hooks, $oxidepress_callbacks, $oxidepress_disabled;
+
+    $tag = (string)$tag;
+    $entries = isset($oxidepress_hooks['filter'][$tag]) ? $oxidepress_hooks['filter'][$tag] : array();
+    usort($entries, 'oxidepress_by_priority');
+    foreach ($entries as $entry) {
+        if (!empty($oxidepress_disabled[$entry['id']])) {
+            continue;
+        }
+        $args = array_merge(array($value), $extra);
+        $accepted = isset($entry['accepted_args']) ? (int)$entry['accepted_args'] : count($args);
+        $callback_args = array_slice($args, 0, $accepted);
+        if (count($callback_args) === 0) {
+            $callback_args = array($value);
+        }
+        $value = call_user_func_array($oxidepress_callbacks[$entry['id']], $callback_args);
+    }
+    return $value;
+}
+
+function add_shortcode($tag, $callback)
+{
+    oxidepress_register('shortcode', $tag, $callback, 10, 1);
+    return true;
+}
+
+function remove_shortcode($tag)
+{
+    global $oxidepress_shortcodes, $oxidepress_disabled, $oxidepress_batch;
+
+    $tag = (string)$tag;
+    if (isset($oxidepress_shortcodes[$tag])) {
+        $oxidepress_disabled[$oxidepress_shortcodes[$tag]] = true;
+        unset($oxidepress_shortcodes[$tag]);
+    }
+    $kept = array();
+    foreach ($oxidepress_batch as $reg) {
+        if (isset($reg['kind'], $reg['tag']) && $reg['kind'] === 'shortcode' && $reg['tag'] === $tag) {
+            if (isset($reg['callback_id'])) {
+                $oxidepress_disabled[$reg['callback_id']] = true;
+            }
+            continue;
+        }
+        $kept[] = $reg;
+    }
+    $oxidepress_batch = $kept;
+}
+
+function shortcode_atts($pairs, $atts, $shortcode = '')
+{
+    if (!is_array($atts)) {
+        $atts = array();
+    }
+    $out = array();
+    foreach ((array)$pairs as $name => $default) {
+        if (array_key_exists($name, $atts)) {
+            $out[$name] = $atts[$name];
+        } else {
+            $out[$name] = $default;
+        }
+    }
+    return $out;
+}
+
+function register_activation_hook($file, $callback)
+{
+    oxidepress_register('activation', (string)$file, $callback, 10, 1);
+}
+
+function register_deactivation_hook($file, $callback)
+{
+    oxidepress_register('deactivation', (string)$file, $callback, 10, 1);
+}
+
+function get_option($option, $default = false)
+{
+    $value = oxidepress_call('get_option', array('name' => (string)$option));
+    if ($value === null) {
+        return $default;
+    }
+    return $value;
+}
+
+function update_option($option, $value, $autoload = null)
+{
+    return (bool)oxidepress_call('update_option', array(
+        'name' => (string)$option,
+        'value' => oxidepress_option_string($value),
+    ));
+}
+
+function add_option($option, $value = '', $deprecated = '', $autoload = 'yes')
+{
+    $existing = oxidepress_call('get_option', array('name' => (string)$option));
+    if ($existing !== null) {
+        return false;
+    }
+    return update_option($option, $value, $autoload);
+}
+
+function delete_option($option)
+{
+    return (bool)oxidepress_call('delete_option', array('name' => (string)$option));
+}
+
+function get_site_option($option, $default = false, $deprecated = true)
+{
+    return get_option($option, $default);
+}
+
+function get_transient($transient)
+{
+    return get_option('_transient_' . $transient, false);
+}
+
+function set_transient($transient, $value, $expiration = 0)
+{
+    return update_option('_transient_' . $transient, $value);
+}
+
+function delete_transient($transient)
+{
+    return delete_option('_transient_' . $transient);
+}
+
+function oxidepress_option_string($value)
+{
+    if (is_bool($value)) {
+        return $value ? '1' : '0';
+    }
+    if ($value === null) {
+        return '';
+    }
+    if (is_array($value) || is_object($value)) {
+        $encoded = json_encode($value);
+        return $encoded === false ? '' : $encoded;
+    }
+    return (string)$value;
+}
+
+function esc_html($text)
+{
+    return htmlspecialchars(oxidepress_text($text), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function esc_attr($text)
+{
+    return esc_html($text);
+}
+
+function __($text, $domain = 'default')
+{
+    return oxidepress_text($text);
+}
+
+function _e($text, $domain = 'default')
+{
+    echo __($text, $domain);
+}
+
+function wp_die($message = '', $title = '', $args = array())
+{
+    throw new RuntimeException('wp_die: ' . oxidepress_text($message));
+}
+
+function plugin_dir_path($file)
+{
+    return rtrim(str_replace('\\', '/', dirname((string)$file)), '/') . '/';
+}
+
+function plugin_basename($file)
+{
+    $file = oxidepress_normalize_path($file);
+    $plugins = rtrim(oxidepress_normalize_path(oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '')), '/');
+    $prefix = $plugins . '/';
+    if ($plugins !== '' && strncmp($file, $prefix, strlen($prefix)) === 0) {
+        return substr($file, strlen($prefix));
+    }
+    $dir = basename(dirname($file));
+    $base = basename($file);
+    if ($dir === '' || $dir === '.' || $dir === '/' || $dir === '\\') {
+        return $base;
+    }
+    return $dir . '/' . $base;
+}
+
+function plugin_dir_url($file)
+{
+    $site = rtrim(oxidepress_env('OXIDEPRESS_SITE_URL', 'http://localhost'), '/');
+    $dir = dirname(plugin_basename($file));
+    $dir = oxidepress_normalize_path($dir);
+    if ($dir === '.' || $dir === '') {
+        $suffix = '';
+    } else {
+        $suffix = trim($dir, '/') . '/';
+    }
+    return $site . '/wp-content/plugins/' . $suffix;
+}
+
+function trailingslashit($value)
+{
+    return rtrim(oxidepress_normalize_path($value), '/') . '/';
+}
+
+function untrailingslashit($value)
+{
+    return rtrim(oxidepress_normalize_path($value), '/');
+}
+
+function path_join($base, $path)
+{
+    $path = (string)$path;
+    if ($path !== '' && ($path[0] === '/' || $path[0] === '\\' || preg_match('/^[A-Za-z]:[\\\\\\/]/', $path))) {
+        return oxidepress_normalize_path($path);
+    }
+    return rtrim(oxidepress_normalize_path($base), '/') . '/' . ltrim(str_replace('\\', '/', $path), '/');
+}
+
+function plugins_url($path = '', $plugin = '')
+{
+    if ($plugin === '' || $plugin === null) {
+        $base = rtrim(oxidepress_env('OXIDEPRESS_SITE_URL', 'http://localhost'), '/') . '/wp-content/plugins';
+    } else {
+        $base = untrailingslashit(plugin_dir_url($plugin));
+    }
+    $path = ltrim(str_replace('\\', '/', (string)$path), '/');
+    if ($path === '') {
+        return $base;
+    }
+    return $base . '/' . $path;
+}
+
+function site_url($path = '', $scheme = null)
+{
+    $base = rtrim(oxidepress_env('OXIDEPRESS_SITE_URL', 'http://localhost'), '/');
+    $path = ltrim(str_replace('\\', '/', (string)$path), '/');
+    if ($path === '') {
+        return $base;
+    }
+    return $base . '/' . $path;
+}
+
+function home_url($path = '', $scheme = null)
+{
+    return site_url($path, $scheme);
+}
+
+function admin_url($path = '', $scheme = 'admin')
+{
+    $path = ltrim(str_replace('\\', '/', (string)$path), '/');
+    if ($path === '') {
+        return site_url('wp-admin/');
+    }
+    return site_url('wp-admin/' . $path);
+}
+
+function is_admin()
+{
+    return false;
+}
+
+function is_multisite()
+{
+    return false;
+}
+
+function wptexturize($text, $reset = false)
+{
+    return oxidepress_text($text);
+}
+
+function get_locale()
+{
+    return 'en_US';
+}
+
+function get_user_locale($user_id = 0)
+{
+    return get_locale();
+}
+
+function __return_true()
+{
+    return true;
+}
+
+function __return_false()
+{
+    return false;
+}
+
+function __return_null()
+{
+    return null;
+}
+
+function __return_empty_string()
+{
+    return '';
+}
+
+function __return_empty_array()
+{
+    return array();
+}
+
+function __return_zero()
+{
+    return 0;
+}
+
+function _x($text, $context, $domain = 'default')
+{
+    return oxidepress_text($text);
+}
+
+function _n($single, $plural, $number, $domain = 'default')
+{
+    return ((int)$number === 1) ? oxidepress_text($single) : oxidepress_text($plural);
+}
+
+function _nx($single, $plural, $number, $context, $domain = 'default')
+{
+    return _n($single, $plural, $number, $domain);
+}
+
+function esc_html_x($text, $context, $domain = 'default')
+{
+    return esc_html($text);
+}
+
+function esc_attr_x($text, $context, $domain = 'default')
+{
+    return esc_attr($text);
+}
+
+function add_query_arg($key, $value = false, $url = null)
+{
+    $args = func_get_args();
+    if (isset($args[0]) && is_array($args[0])) {
+        $pairs = $args[0];
+        $target = isset($args[1]) ? (string)$args[1] : '';
+    } else {
+        $pairs = array((string)$key => $value);
+        $target = isset($args[2]) ? (string)$args[2] : '';
+    }
+    $fragment = '';
+    $hash = strpos($target, '#');
+    if ($hash !== false) {
+        $fragment = substr($target, $hash);
+        $target = substr($target, 0, $hash);
+    }
+    $parts = explode('?', $target, 2);
+    $base = $parts[0];
+    $query = array();
+    if (isset($parts[1]) && $parts[1] !== '') {
+        parse_str($parts[1], $query);
+    }
+    foreach ($pairs as $name => $item) {
+        if ($item === false || $item === null) {
+            unset($query[$name]);
+        } else {
+            $query[$name] = $item;
+        }
+    }
+    $built = http_build_query($query);
+    return $base . ($built === '' ? '' : '?' . $built) . $fragment;
+}
+
+function remove_query_arg($key, $query = false)
+{
+    if (!is_array($key)) {
+        $key = array($key);
+    }
+    $pairs = array();
+    foreach ($key as $name) {
+        $pairs[$name] = false;
+    }
+    return add_query_arg($pairs, $query === false ? '' : (string)$query);
+}
+
+function esc_html__($text, $domain = 'default')
+{
+    return esc_html(__($text, $domain));
+}
+
+function esc_attr__($text, $domain = 'default')
+{
+    return esc_attr(__($text, $domain));
+}
+
+function esc_html_e($text, $domain = 'default')
+{
+    echo esc_html__($text, $domain);
+}
+
+function esc_attr_e($text, $domain = 'default')
+{
+    echo esc_attr__($text, $domain);
+}
+
+function esc_url($url, $protocols = null, $_context = 'display')
+{
+    $url = esc_url_raw($url, $protocols);
+    if ($url === '') {
+        return '';
+    }
+    return htmlspecialchars($url, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+}
+
+function esc_url_raw($url, $protocols = null)
+{
+    $url = trim(oxidepress_text($url));
+    if ($url === '') {
+        return '';
+    }
+    if (preg_match('/^(javascript|data):/i', $url)) {
+        return '';
+    }
+    return $url;
+}
+
+function sanitize_url($url, $protocols = null)
+{
+    return esc_url_raw($url, $protocols);
+}
+
+function sanitize_text_field($text)
+{
+    $text = oxidepress_text($text);
+    $text = preg_replace('/[\r\n\t ]+/', ' ', $text);
+    if ($text === null) {
+        return '';
+    }
+    return trim(strip_tags($text));
+}
+
+function wp_parse_args($args, $defaults = array())
+{
+    if (is_object($args)) {
+        $args = get_object_vars($args);
+    } elseif (is_string($args)) {
+        parse_str($args, $parsed);
+        $args = $parsed;
+    }
+    if (!is_array($args)) {
+        $args = array();
+    }
+    if (!is_array($defaults)) {
+        $defaults = array();
+    }
+    return array_merge($defaults, $args);
+}
+
+function has_action($tag, $callback = false)
+{
+    return oxidepress_has_hook('action', $tag, $callback);
+}
+
+function has_filter($tag, $callback = false)
+{
+    return oxidepress_has_hook('filter', $tag, $callback);
+}
+
+function did_action($tag)
+{
+    global $oxidepress_did;
+    $tag = (string)$tag;
+    return isset($oxidepress_did[$tag]) ? (int)$oxidepress_did[$tag] : 0;
+}
+
+function oxidepress_has_hook($kind, $tag, $callback)
+{
+    global $oxidepress_hooks, $oxidepress_callbacks, $oxidepress_disabled;
+    $tag = (string)$tag;
+    if (empty($oxidepress_hooks[$kind][$tag])) {
+        return false;
+    }
+    foreach ($oxidepress_hooks[$kind][$tag] as $entry) {
+        if (!empty($oxidepress_disabled[$entry['id']])) {
+            continue;
+        }
+        if ($callback === false) {
+            return true;
+        }
+        if (oxidepress_same_callback($oxidepress_callbacks[$entry['id']], $callback)) {
+            return (int)$entry['priority'];
+        }
+    }
+    return false;
+}
+
+function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path = false)
+{
+    return true;
+}
+
+function register_setting($option_group, $option_name, $args = array())
+{
+}
+
+function add_settings_section($id, $title, $callback, $page)
+{
+}
+
+function add_settings_field($id, $title, $callback, $page, $section = 'default', $args = array())
+{
+}
+
+function add_allowed_options($new_options, $options = '')
+{
+    return is_array($new_options) ? $new_options : array();
+}
+
+function wp_enqueue_script($handle, $src = '', $deps = array(), $ver = false, $args = array())
+{
+}
+
+function wp_enqueue_style($handle, $src = '', $deps = array(), $ver = false, $media = 'all')
+{
+}
+
+function wp_register_script($handle, $src, $deps = array(), $ver = false, $args = array())
+{
+    return true;
+}
+
+function wp_register_style($handle, $src, $deps = array(), $ver = false, $media = 'all')
+{
+    return true;
+}
+
+class WP_Widget
+{
+    public $id_base;
+    public $name;
+    public $option_name;
+    public $widget_options = array();
+    public $control_options = array();
+    public $number = false;
+    public $id = false;
+    public $updated = false;
+
+    public function __construct($id_base, $name, $widget_options = array(), $control_options = array())
+    {
+        $this->id_base = $id_base;
+        $this->name = $name;
+        $this->option_name = 'widget_' . $id_base;
+        $this->widget_options = is_array($widget_options) ? $widget_options : array();
+        $this->control_options = is_array($control_options) ? $control_options : array();
+    }
+
+    public function get_field_id($field_name)
+    {
+        return 'widget-' . $this->id_base . '-' . $field_name;
+    }
+
+    public function get_field_name($field_name)
+    {
+        return 'widget-' . $this->id_base . '[' . $field_name . ']';
+    }
+}
+
+function oxidepress_normalize_path($path)
+{
+    $path = str_replace('\\', '/', (string)$path);
+    $collapsed = preg_replace('#/+#', '/', $path);
+    if ($collapsed === null) {
+        return $path;
+    }
+    return $collapsed;
+}
+
+function oxidepress_text($value)
+{
+    if (is_array($value) || is_object($value)) {
+        $encoded = json_encode($value);
+        return $encoded === false ? '' : $encoded;
+    }
+    if ($value === null || $value === false) {
+        return '';
+    }
+    return (string)$value;
+}
+
+function oxidepress_env($name, $default)
+{
+    $value = getenv($name);
+    if ($value === false || $value === '') {
+        return $default;
+    }
+    return $value;
+}
+
+function oxidepress_call($method, $params)
+{
+    global $oxidepress_request_id;
+
+    $frame = array_merge(array(
+        'id' => $oxidepress_request_id,
+        'call' => $method,
+    ), $params);
+    oxidepress_write_frame($frame);
+
+    while (true) {
+        $reply = oxidepress_read_frame();
+        if ($reply === null) {
+            throw new RuntimeException('php host disconnected');
+        }
+        if (isset($reply['call'])) {
+            throw new RuntimeException('unexpected host call from rust');
+        }
+        if (array_key_exists('result', $reply)) {
+            return $reply['result'];
+        }
+    }
+}
+
+function oxidepress_read_frame()
+{
+    $header = oxidepress_read_exact(4);
+    if ($header === null) {
+        return null;
+    }
+    $parts = unpack('Vlen', $header);
+    $len = (int)$parts['len'];
+    if ($len <= 0 || $len > 8388608) {
+        throw new RuntimeException('invalid frame length ' . $len);
+    }
+    $body = oxidepress_read_exact($len);
+    if ($body === null) {
+        throw new RuntimeException('truncated frame');
+    }
+    $decoded = json_decode($body, true);
+    if (!is_array($decoded)) {
+        throw new RuntimeException('frame is not a json object');
+    }
+    return $decoded;
+}
+
+function oxidepress_read_exact($count)
+{
+    $buf = '';
+    while (strlen($buf) < $count) {
+        $chunk = fread(STDIN, $count - strlen($buf));
+        if ($chunk === false || $chunk === '') {
+            return null;
+        }
+        $buf .= $chunk;
+    }
+    return $buf;
+}
+
+function oxidepress_write_frame($data)
+{
+    $paused = array();
+    while (ob_get_level() > 0) {
+        $chunk = ob_get_clean();
+        $paused[] = ($chunk === false) ? '' : $chunk;
+    }
+
+    $flags = JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES;
+    if (defined('JSON_INVALID_UTF8_SUBSTITUTE')) {
+        $flags |= JSON_INVALID_UTF8_SUBSTITUTE;
+    }
+    $json = json_encode($data, $flags);
+    if ($json === false) {
+        $id = isset($data['id']) ? $data['id'] : 0;
+        $json = json_encode(array(
+            'id' => $id,
+            'ok' => false,
+            'error' => 'failed to encode frame',
+        ));
+    }
+
+    $packet = pack('V', strlen($json)) . $json;
+    $written = 0;
+    $total = strlen($packet);
+    while ($written < $total) {
+        $count = fwrite(STDOUT, substr($packet, $written));
+        if ($count === false || $count === 0) {
+            oxidepress_resume_buffers($paused);
+            throw new RuntimeException('failed to write frame');
+        }
+        $written += $count;
+    }
+    fflush(STDOUT);
+    oxidepress_resume_buffers($paused);
+}
+
+function oxidepress_resume_buffers($paused)
+{
+    $index = count($paused);
+    while ($index > 0) {
+        $index--;
+        ob_start();
+        if ($paused[$index] !== '') {
+            echo $paused[$index];
+        }
+    }
+}
+
+function oxidepress_shutdown()
+{
+    global $oxidepress_request_id, $oxidepress_fatal_sent;
+
+    if ($oxidepress_fatal_sent) {
+        return;
+    }
+    $err = error_get_last();
+    if (!$err) {
+        return;
+    }
+    $fatal = array(E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR, E_USER_ERROR);
+    if (!in_array($err['type'], $fatal, true)) {
+        return;
+    }
+    $oxidepress_fatal_sent = true;
+    oxidepress_write_frame(array(
+        'id' => $oxidepress_request_id,
+        'ok' => false,
+        'error' => $err['message'],
+    ));
+}

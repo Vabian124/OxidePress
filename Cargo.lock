@@ -3086,6 +3086,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidepress-php"
+version = "0.2.0"
+dependencies = [
+ "oxidepress-core",
+ "serde_json",
+]
+
+[[package]]
 name = "oxidepress-plugins"
 version = "0.2.0"
 dependencies = [
