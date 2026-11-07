@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress, skip WAF on theme assets, let wp-admin routes through, and recognize shop managers.
+// Modified by Vabian124 on 2026-11-07 to refuse addresses stored in the block list.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -349,8 +349,19 @@ pub async fn waf_check(
     request: Request,
     next: Next,
 ) -> Response {
-    let method = request.method().to_string();
     let path = request.uri().path().to_string();
+    let client_ip = extract_client_ip(&request);
+    if let Ok(raw) = state.options.get_option_or("wf_blocked_ips", "").await {
+        let mut options = std::collections::HashMap::new();
+        options.insert("wf_blocked_ips".to_string(), raw);
+        let settings = oxidepress_security::WordfenceSettings::from_options(&options);
+        if !settings.check_ip(&client_ip) {
+            tracing::warn!(ip = %client_ip, %path, "blocked address");
+            return (StatusCode::FORBIDDEN, "Forbidden").into_response();
+        }
+    }
+
+    let method = request.method().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
 
     // Theme and wp-includes assets are trusted files. Chrome's Accept header

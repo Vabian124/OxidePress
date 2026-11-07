@@ -1340,18 +1340,18 @@ async fn security_dashboard_save(
                         .get_option_or("wf_blocked_ips", "")
                         .await
                         .unwrap_or_default();
-                    let mut ips: Vec<String> = if current.is_empty() {
+                    let mut settings = oxidepress_security::WordfenceSettings::default();
+                    settings.blocked_ips = if current.is_empty() {
                         vec![]
                     } else {
                         current.split(',').map(|s| s.trim().to_string()).collect()
                     };
-                    if !ips.contains(ip) {
-                        ips.push(ip.clone());
+                    if settings.block_ip(ip) {
+                        let _ = state
+                            .options
+                            .update_option("wf_blocked_ips", &settings.blocked_ips.join(","))
+                            .await;
                     }
-                    let _ = state
-                        .options
-                        .update_option("wf_blocked_ips", &ips.join(","))
-                        .await;
                 }
             }
         }
