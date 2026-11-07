@@ -28,14 +28,17 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - `wf_firewall_enabled=0` skips the firewall scan. The block list still refuses stored addresses. A missing option keeps the scan on.
 - `wf_rate_limit_maxRequestsPerMin` is the per-minute ceiling. `wf_rate_limit_enabled=0` does not refuse.
 - The public comment form accepts WordPress field names. An approved comment appears on the post.
+- `wf_login_sec_enabled`, `wf_login_sec_maxFailures`, and `wf_login_sec_lockoutMins` control the next login attempt. A disabled lockout does not lock the address.
+- `comment_moderation=1` keeps a new comment off the public page. When it is off, the comment is approved and listed.
+- `/?s=word` lists published posts whose title or content contains that word. An empty result says “No results found.”
 
 ## Next, in order
 
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Login lockout uses the saved settings | `oxidepress-server` | `wf_login_sec_enabled`, `wf_login_sec_maxFailures`, and `wf_login_sec_lockoutMins` control the next login attempt. A disabled lockout does not lock the address. |
-| 2 | Comment moderation | `oxidepress-server` | When `comment_moderation` is on, a new comment stays unapproved and the public page does not list it. When it is off, the comment is approved and listed. |
-| 3 | Search results | `oxidepress-server` | `/?s=word` lists published posts whose title or content contains that word, and an empty search says so. |
+| 1 | Logged-in comment author | `oxidepress-server` | A logged-in visitor’s comment uses their display name and email, and the form does not ask for a name. |
+| 2 | Trash and spam stay off the site | `oxidepress-server` | A comment marked spam or trash is not listed on the public post, and the comment count ignores it. |
+| 3 | Date archives | `oxidepress-server` | `/{year}/`, `/{year}/{month}/`, and `/{year}/{month}/{day}/` list the published posts from that date. |
 
 ## Not this plan
 

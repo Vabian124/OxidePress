@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to accept the theme comment form.
+// Modified by Vabian124 on 2026-11-07 to hold comments when moderation is on.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -1800,6 +1800,20 @@ async fn rss_feed(State(state): State<Arc<AppState>>) -> Response {
         .into_response()
 }
 
+async fn comment_is_approved(state: &AppState) -> String {
+    let moderation = state
+        .options
+        .get_option("comment_moderation")
+        .await
+        .ok()
+        .flatten();
+    if matches!(moderation.as_deref(), Some("1")) {
+        "0".to_string()
+    } else {
+        "1".to_string()
+    }
+}
+
 // ---- Comment Submission ----
 
 async fn submit_comment(
@@ -1866,7 +1880,7 @@ async fn submit_comment(
         comment_date_gmt: Set(now),
         comment_content: Set(form.comment.trim().to_string()),
         comment_karma: Set(0),
-        comment_approved: Set("1".to_string()),
+        comment_approved: Set(comment_is_approved(&state).await),
         comment_agent: Set(String::new()),
         comment_type: Set("comment".to_string()),
         comment_parent: Set(form.comment_parent.unwrap_or(0)),
