@@ -1,0 +1,12 @@
+# Modified by Vabian124 on 2026-11-07 to parse plugin PHP into a Rust skeleton.
+# Original work: RustPress by Ryuji Yasukochi.
+# Licensed under the GNU General Public License, version 2.
+[package]
+name = "oxidepress-rustify"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Parse WordPress plugin registrations and emit an OxidePress Rust skeleton"
+
+[dependencies]

@@ -1,4 +1,4 @@
-# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Modified by Vabian124 on 2026-11-07 to add the plugin rustify crate.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [workspace]
@@ -26,6 +26,7 @@ members = [
     "crates/oxidepress-security",
     "crates/oxidepress-i18n",
     "crates/oxidepress-blocks",
+    "crates/oxidepress-rustify",
 ]
 
 [workspace.package]
@@ -62,6 +63,7 @@ oxidepress-security = { path = "crates/oxidepress-security" }
 oxidepress-i18n = { path = "crates/oxidepress-i18n" }
 oxidepress-blocks = { path = "crates/oxidepress-blocks" }
 oxidepress-commerce = { path = "crates/oxidepress-commerce" }
+oxidepress-rustify = { path = "crates/oxidepress-rustify" }
 
 # Web framework
 axum = "0.8"

@@ -3117,6 +3117,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "oxidepress-rustify"
+version = "0.2.0"
+
+[[package]]
 name = "oxidepress-security"
 version = "0.2.0"
 dependencies = [
