@@ -461,6 +461,89 @@ pub(crate) fn link_placeholder_nav(html: &str, targets: &[(String, String)]) -> 
     html
 }
 
+async fn published_query_posts(state: &AppState, limit: u64) -> Vec<oxidepress_blocks::QueryPost> {
+    let models = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("post"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .order_by_desc(wp_posts::Column::PostDate)
+        .limit(limit)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let rewrite = state.rewrite_rules.read().await;
+    models
+        .iter()
+        .map(|post| {
+            let data = PostTemplateData::from_model_with_rewrite(post, &state.site_url, &rewrite);
+            oxidepress_blocks::QueryPost {
+                id: data.id,
+                title: data.title,
+                excerpt: data.excerpt,
+                date: data.date_formatted,
+                date_iso: data.date_iso,
+                author: data.author_name,
+                url: data.permalink,
+                featured_image_url: data.featured_image_url,
+                comment_count: data.comment_count,
+            }
+        })
+        .collect()
+}
+
+async fn published_page_links(state: &AppState) -> Vec<oxidepress_blocks::NavLink> {
+    let models = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("page"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .order_by_asc(wp_posts::Column::MenuOrder)
+        .order_by_asc(wp_posts::Column::PostTitle)
+        .all(&state.db)
+        .await
+        .unwrap_or_default();
+    let rewrite = state.rewrite_rules.read().await;
+    models
+        .iter()
+        .map(|page| {
+            let data = PostTemplateData::from_model_with_rewrite(page, &state.site_url, &rewrite);
+            oxidepress_blocks::NavLink {
+                label: data.title,
+                url: data.permalink,
+            }
+        })
+        .collect()
+}
+
+async fn adjacent_post_urls(
+    state: &AppState,
+    post_date: chrono::NaiveDateTime,
+) -> (String, String) {
+    let previous = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("post"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .filter(wp_posts::Column::PostDate.lt(post_date))
+        .order_by_desc(wp_posts::Column::PostDate)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten();
+    let next = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("post"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .filter(wp_posts::Column::PostDate.gt(post_date))
+        .order_by_asc(wp_posts::Column::PostDate)
+        .one(&state.db)
+        .await
+        .ok()
+        .flatten();
+    let rewrite = state.rewrite_rules.read().await;
+    let url = |post: wp_posts::Model| {
+        PostTemplateData::from_model_with_rewrite(&post, &state.site_url, &rewrite).permalink
+    };
+    (
+        previous.map(&url).unwrap_or_default(),
+        next.map(&url).unwrap_or_default(),
+    )
+}
+
 pub(crate) async fn ensure_footer_pages(state: &AppState) {
     let pages = [
         (
@@ -1044,6 +1127,13 @@ async fn single_post_by_slug(
                         }
                     }
                 }
+                let query_posts = published_query_posts(state, 10).await;
+                let pages = published_page_links(state).await;
+                let (previous_url, next_url) = if p.post_type == "post" {
+                    adjacent_post_urls(state, p.post_date).await
+                } else {
+                    (String::new(), String::new())
+                };
                 let render_ctx = oxidepress_blocks::RenderContext {
                     site_title,
                     site_tagline,
@@ -1058,6 +1148,11 @@ async fn single_post_by_slug(
                     featured_image_url,
                     comment_count: data.comment_count,
                     content_words: p.post_content.split_whitespace().count() as u32,
+                    query_total: query_posts.len(),
+                    query_posts,
+                    pages,
+                    previous_url,
+                    next_url,
                 };
                 let rendered = oxidepress_blocks::with_render_context(&render_ctx, || {
                     state.block_renderer.render_blocks(&blocks)
@@ -1249,11 +1344,19 @@ async fn single_post_by_slug(
                     .ok()
                     .flatten();
                 if let Some(prev_post) = prev {
+                    let rewrite = state.rewrite_rules.read().await;
+                    let permalink = PostTemplateData::from_model_with_rewrite(
+                        &prev_post,
+                        &state.site_url,
+                        &rewrite,
+                    )
+                    .permalink;
+                    drop(rewrite);
                     context.insert(
                         "prev_post",
                         &serde_json::json!({
                             "title": prev_post.post_title,
-                            "permalink": format!("/{}", prev_post.post_name),
+                            "permalink": permalink,
                         }),
                     );
                 }
@@ -1268,11 +1371,19 @@ async fn single_post_by_slug(
                     .ok()
                     .flatten();
                 if let Some(next_post) = next {
+                    let rewrite = state.rewrite_rules.read().await;
+                    let permalink = PostTemplateData::from_model_with_rewrite(
+                        &next_post,
+                        &state.site_url,
+                        &rewrite,
+                    )
+                    .permalink;
+                    drop(rewrite);
                     context.insert(
                         "next_post",
                         &serde_json::json!({
                             "title": next_post.post_title,
-                            "permalink": format!("/{}", next_post.post_name),
+                            "permalink": permalink,
                         }),
                     );
                 }
