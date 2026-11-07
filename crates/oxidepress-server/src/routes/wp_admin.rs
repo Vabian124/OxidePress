@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and add the login log page.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -168,6 +168,7 @@ pub struct MediaQuery {
 pub struct UsersQuery {
     pub role: Option<String>,
     pub deleted: Option<String>,
+    pub page: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -659,6 +660,10 @@ async fn login_submit(
 ) -> Response {
     // Extract client IP from request headers for audit logging
     let client_ip = extract_client_ip_from_headers(&headers);
+    let user_agent = headers
+        .get(header::USER_AGENT)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_string());
 
     // Parse client IP for rate limiting (atomic check via check_and_record on failure paths)
     let parsed_ip: std::net::IpAddr = client_ip
@@ -684,9 +689,11 @@ async fn login_submit(
         Ok(Some(u)) => u,
         _ => {
             // Log failed login attempt (user not found — same error message to prevent enumeration)
-            state
-                .audit_log
-                .log_login_failure(&client_ip, &form.username);
+            state.audit_log.log_login_failure_with_ua(
+                &client_ip,
+                &form.username,
+                user_agent.as_deref(),
+            );
             // Atomically record failure and check lockout
             if state.login_tracker.check_and_record(parsed_ip).is_err() {
                 return (
@@ -709,9 +716,11 @@ async fn login_submit(
 
     if !valid {
         // Log failed login attempt (wrong password)
-        state
-            .audit_log
-            .log_login_failure(&client_ip, &form.username);
+        state.audit_log.log_login_failure_with_ua(
+            &client_ip,
+            &form.username,
+            user_agent.as_deref(),
+        );
         // Atomically record failure and check lockout
         if state.login_tracker.check_and_record(parsed_ip).is_err() {
             return (
@@ -772,9 +781,12 @@ async fn login_submit(
     state.login_tracker.clear(&parsed_ip);
 
     // Log successful login
-    state
-        .audit_log
-        .log_login_success(&client_ip, user.id, &user.user_login);
+    state.audit_log.log_login_success_with_ua(
+        &client_ip,
+        user.id,
+        &user.user_login,
+        user_agent.as_deref(),
+    );
 
     // Set cookie with security attributes (OWASP A07)
     // Secure flag added when site_url starts with https
@@ -1753,6 +1765,10 @@ async fn users_list(
     Extension(session): Extension<Session>,
     Query(params): Query<UsersQuery>,
 ) -> Html<String> {
+    if params.page.as_deref() == Some("login-log") {
+        return login_log_page(State(state), Extension(session)).await;
+    }
+
     let mut ctx = admin_context(&state, &session).await;
     ctx.insert("active_page", "users");
 
@@ -1801,6 +1817,41 @@ async fn users_list(
     ctx.insert("users", &items);
 
     render_admin(&state, "admin/users.html", &ctx)
+}
+
+async fn login_log_page(
+    State(state): State<Arc<AppState>>,
+    Extension(session): Extension<Session>,
+) -> Html<String> {
+    let mut ctx = admin_context(&state, &session).await;
+    ctx.insert("active_page", "login-log");
+
+    let entries = state.audit_log.login_events(200);
+    let log_items: Vec<serde_json::Value> = entries
+        .iter()
+        .map(|e| {
+            let dt = chrono::DateTime::from_timestamp(e.timestamp as i64, 0)
+                .unwrap_or_default()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string();
+            serde_json::json!({
+                "timestamp": dt,
+                "ip_address": e.ip_address,
+                "username": e.username.as_deref().unwrap_or("-"),
+                "result": if e.event_type == oxidepress_security::audit_log::AuditEventType::LoginSuccess {
+                    "success"
+                } else {
+                    "failure"
+                },
+                "user_agent": e.user_agent.as_deref().unwrap_or("-"),
+            })
+        })
+        .collect();
+
+    ctx.insert("login_logs", &log_items);
+    ctx.insert("log_count", &log_items.len());
+
+    render_admin(&state, "admin/login-log.html", &ctx)
 }
 
 // --- User New ---

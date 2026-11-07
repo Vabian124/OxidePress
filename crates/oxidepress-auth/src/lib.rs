@@ -1,3 +1,7 @@
+// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and export the login audit helpers.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
+pub mod audit;
 pub mod jwt;
 pub mod jwt_blacklist;
 pub mod middleware;

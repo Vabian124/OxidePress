@@ -1,13 +1,17 @@
+// Modified by Vabian124 on 2026-11-07 to record login user agents.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 //! Security audit logging system.
 //!
 //! Records security-relevant events: login attempts, permission changes,
 //! content modifications, WAF blocks, and rate limiting events.
 
+use serde::Serialize;
 use std::collections::VecDeque;
 use std::sync::Mutex;
 
 /// Categories of security events.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub enum AuditEventType {
     LoginSuccess,
     LoginFailure,
@@ -55,7 +59,7 @@ impl std::fmt::Display for AuditEventType {
 }
 
 /// Severity levels for audit events.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 pub enum Severity {
     Info,
     Warning,
@@ -73,7 +77,7 @@ impl std::fmt::Display for Severity {
 }
 
 /// A single audit log entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
 pub struct AuditEntry {
     pub timestamp: u64,
     pub event_type: AuditEventType,
@@ -83,6 +87,7 @@ pub struct AuditEntry {
     pub username: Option<String>,
     pub description: String,
     pub metadata: Option<String>,
+    pub user_agent: Option<String>,
 }
 
 /// In-memory audit log with bounded capacity.
@@ -152,6 +157,17 @@ impl AuditLog {
 
     /// Convenience: log a login success event.
     pub fn log_login_success(&self, ip: &str, user_id: u64, username: &str) {
+        self.log_login_success_with_ua(ip, user_id, username, None);
+    }
+
+    /// Log a login success event with user-agent.
+    pub fn log_login_success_with_ua(
+        &self,
+        ip: &str,
+        user_id: u64,
+        username: &str,
+        user_agent: Option<&str>,
+    ) {
         self.log(AuditEntry {
             timestamp: now_unix(),
             event_type: AuditEventType::LoginSuccess,
@@ -161,11 +177,17 @@ impl AuditLog {
             username: Some(username.to_string()),
             description: format!("Successful login for user '{username}'"),
             metadata: None,
+            user_agent: user_agent.map(|s| s.to_string()),
         });
     }
 
     /// Convenience: log a login failure event.
     pub fn log_login_failure(&self, ip: &str, username: &str) {
+        self.log_login_failure_with_ua(ip, username, None);
+    }
+
+    /// Log a login failure event with user-agent.
+    pub fn log_login_failure_with_ua(&self, ip: &str, username: &str, user_agent: Option<&str>) {
         self.log(AuditEntry {
             timestamp: now_unix(),
             event_type: AuditEventType::LoginFailure,
@@ -175,6 +197,7 @@ impl AuditLog {
             username: Some(username.to_string()),
             description: format!("Failed login attempt for user '{username}'"),
             metadata: None,
+            user_agent: user_agent.map(|s| s.to_string()),
         });
     }
 
@@ -189,6 +212,7 @@ impl AuditLog {
             username: None,
             description: format!("WAF blocked request to '{path}' (rule: {rule_id})"),
             metadata: Some(format!("rule_id={rule_id}")),
+            user_agent: None,
         });
     }
 
@@ -203,6 +227,7 @@ impl AuditLog {
             username: None,
             description: format!("Rate limited request to '{path}'"),
             metadata: None,
+            user_agent: None,
         });
     }
 
@@ -217,6 +242,7 @@ impl AuditLog {
             username: None,
             description: format!("Brute force attack detected from {ip}"),
             metadata: None,
+            user_agent: None,
         });
     }
 
@@ -237,6 +263,7 @@ impl AuditLog {
             username: None,
             description: description.to_string(),
             metadata: None,
+            user_agent: None,
         });
     }
 
@@ -251,7 +278,26 @@ impl AuditLog {
             username: None,
             description: format!("Settings changed: {setting}"),
             metadata: None,
+            user_agent: None,
         });
+    }
+
+    /// Get login events (success and failure), newest first.
+    pub fn login_events(&self, limit: usize) -> Vec<AuditEntry> {
+        if let Ok(entries) = self.entries.lock() {
+            entries
+                .iter()
+                .rev()
+                .filter(|e| {
+                    e.event_type == AuditEventType::LoginSuccess
+                        || e.event_type == AuditEventType::LoginFailure
+                })
+                .take(limit)
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     /// Get recent audit entries (newest first).

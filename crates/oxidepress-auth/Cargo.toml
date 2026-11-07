@@ -1,4 +1,4 @@
-# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+# Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and depend on oxidepress-security for the login audit log.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [package]
@@ -12,6 +12,7 @@ description = "Authentication, sessions, and role management for OxidePress"
 [dependencies]
 oxidepress-core = { workspace = true }
 oxidepress-db = { workspace = true }
+oxidepress-security = { workspace = true }
 sea-orm = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

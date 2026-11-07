@@ -2892,6 +2892,7 @@ dependencies = [
  "moka",
  "oxidepress-core",
  "oxidepress-db",
+ "oxidepress-security",
  "sea-orm",
  "serde",
  "serde_json",
