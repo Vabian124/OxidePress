@@ -372,7 +372,7 @@ pub async fn waf_check(
     }
 
     let method = request.method().to_string();
-    let query = request.uri().query().unwrap_or("").to_string();
+    let query = decode_query(request.uri().query().unwrap_or(""));
 
     // Theme and wp-includes assets are trusted files. Chrome's Accept header
     // (`image/*,*/*`) matches the SQL-comment rule, so those paths are not scanned.
@@ -770,6 +770,28 @@ fn php_route_is_served(path: &str) -> bool {
 ///
 /// Theme stylesheets, theme images, and `wp-includes` files are build artifacts.
 /// Scanning them flags Chrome's `image/*,*/*` Accept header as a SQL comment.
+fn decode_query(query: &str) -> String {
+    let spaced = query.replace('+', " ");
+    let bytes = spaced.as_bytes();
+    let mut decoded = Vec::with_capacity(bytes.len());
+    let mut index = 0;
+    while index < bytes.len() {
+        if bytes[index] == b'%' && index + 2 < bytes.len() {
+            if let Ok(byte) = u8::from_str_radix(
+                std::str::from_utf8(&bytes[index + 1..index + 3]).unwrap_or(""),
+                16,
+            ) {
+                decoded.push(byte);
+                index += 3;
+                continue;
+            }
+        }
+        decoded.push(bytes[index]);
+        index += 1;
+    }
+    String::from_utf8_lossy(&decoded).into_owned()
+}
+
 fn waf_exempt_path(path: &str) -> bool {
     path.starts_with("/static/")
         || path.starts_with("/wp-content/uploads/")
@@ -809,6 +831,12 @@ mod tests {
             "/wp-content/plugins/example/plugin.php"
         ));
         assert!(!php_route_is_served("/readme.php"));
+    }
+
+    #[test]
+    fn decoded_query_turns_escapes_into_spaces() {
+        assert_eq!(decode_query("s=union%20select"), "s=union select");
+        assert_eq!(decode_query("s=union+select"), "s=union select");
     }
 
     #[test]
