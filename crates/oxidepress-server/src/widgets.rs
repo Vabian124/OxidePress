@@ -1,4 +1,5 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to link a recent comment to its post.
+
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! WordPress-style widget system for OxidePress.
@@ -569,13 +570,22 @@ async fn render_recent_comments(title: &str, count: u32, db: &DatabaseConnection
 
     for c in &comments {
         // Try to load the post title for context
-        let post_title = if let Ok(Some(post)) = wp_posts::Entity::find_by_id(c.comment_post_id)
-            .one(db)
-            .await
+        let (post_title, href) = if let Ok(Some(post)) =
+            wp_posts::Entity::find_by_id(c.comment_post_id)
+                .one(db)
+                .await
         {
-            post.post_title
+            let href = if post.post_name.is_empty() {
+                format!("/?p={}#comment-{}", post.id, c.comment_id)
+            } else {
+                format!("/{}/#comment-{}", post.post_name, c.comment_id)
+            };
+            (post.post_title, href)
         } else {
-            format!("Post #{}", c.comment_post_id)
+            (
+                format!("Post #{}", c.comment_post_id),
+                format!("/?p={}#comment-{}", c.comment_post_id, c.comment_id),
+            )
         };
 
         let excerpt = if c.comment_content.len() > 50 {
@@ -585,10 +595,9 @@ async fn render_recent_comments(title: &str, count: u32, db: &DatabaseConnection
         };
 
         html.push_str(&format!(
-            "  <li>{} on <a href=\"/{}#comment-{}\">{}</a>: {}</li>\n",
+            "  <li>{} on <a href=\"{}\">{}</a>: {}</li>\n",
             escape_html(&c.comment_author),
-            c.comment_post_id,
-            c.comment_id,
+            escape_html(&href),
             escape_html(&post_title),
             escape_html(&excerpt)
         ));

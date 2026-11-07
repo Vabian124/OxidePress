@@ -39,6 +39,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - A new comment stores the visitor address. The comments screen shows that address under the author.
 - A signed-in visitor sees “Logged in as” their display name on the comment form, and the form does not ask for a name or email.
 - The comments screen names the post a comment belongs to. The All count stays the full total when another status is selected.
+- `/comments/feed/` names the post and links to that post’s permalink with the comment anchor. A recent-comments widget uses the same permalink.
 
 ## Next, in order
 

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to show the signed-in account on the comment form.
+// Modified by Vabian124 on 2026-11-07 to name the post in the comments feed.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -2555,14 +2555,40 @@ async fn comments_feed(State(state): State<Arc<AppState>>) -> Response {
         .await
         .unwrap_or_default();
 
+    let post_ids: Vec<u64> = comments.iter().map(|c| c.comment_post_id).collect();
+    let mut posts_by_id = std::collections::HashMap::<u64, wp_posts::Model>::new();
+    if !post_ids.is_empty() {
+        if let Ok(posts) = wp_posts::Entity::find()
+            .filter(wp_posts::Column::Id.is_in(post_ids))
+            .all(&state.db)
+            .await
+        {
+            for post in posts {
+                posts_by_id.insert(post.id, post);
+            }
+        }
+    }
+    let rewrite = state.rewrite_rules.read().await;
+
     let mut items = String::new();
     for c in &comments {
         let pub_date = c.comment_date_gmt.format("%a, %d %b %Y %H:%M:%S +0000");
-        let link = format!(
-            "{}/?p={}#comment-{}",
-            site_url, c.comment_post_id, c.comment_id
-        );
-        let title = format!("{} on post #{}", c.comment_author, c.comment_post_id);
+        let (post_title, link) = if let Some(post) = posts_by_id.get(&c.comment_post_id) {
+            let data = PostTemplateData::from_model_with_rewrite(post, site_url, &rewrite);
+            (
+                post.post_title.clone(),
+                format!("{}#comment-{}", data.permalink, c.comment_id),
+            )
+        } else {
+            (
+                format!("post #{}", c.comment_post_id),
+                format!(
+                    "{}/?p={}#comment-{}",
+                    site_url, c.comment_post_id, c.comment_id
+                ),
+            )
+        };
+        let title = format!("{} on {}", c.comment_author, post_title);
         items.push_str(&format!(
             r#"    <item>
       <title><![CDATA[{}]]></title>
