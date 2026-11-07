@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to render the shop inside the active theme.
+// Modified by Vabian124 on 2026-11-07 to reduce product stock when an order is placed.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -12,7 +12,7 @@ use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, QueryOrde
 use serde::Deserialize;
 use std::sync::Arc;
 
-use oxidepress_commerce::woo_compat::{self, WooOrderData};
+use oxidepress_commerce::woo_compat::{self, WooOrderData, WooProductData};
 use oxidepress_db::entities::wp_posts;
 use oxidepress_db::queries;
 
@@ -557,6 +557,29 @@ async fn checkout_submit(
             queries::set_post_meta_bulk(&state.db, inserted.id, &stored.to_meta()).await
         {
             tracing::error!(%error, "shop order meta was not saved");
+        }
+    }
+
+    for item in &cart.items {
+        let meta = queries::get_post_meta_map(&state.db, item.product_id)
+            .await
+            .unwrap_or_default();
+        let product = WooProductData::from_post_and_meta(item.product_id, "", "", "", "", &meta);
+        if let Some((next, status)) = product.after_sale(item.quantity as i64) {
+            let _ = queries::set_post_meta(
+                &state.db,
+                item.product_id,
+                woo_compat::product_keys::STOCK,
+                &next.to_string(),
+            )
+            .await;
+            let _ = queries::set_post_meta(
+                &state.db,
+                item.product_id,
+                woo_compat::product_keys::STOCK_STATUS,
+                status,
+            )
+            .await;
         }
     }
 
