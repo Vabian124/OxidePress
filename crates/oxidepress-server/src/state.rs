@@ -1,7 +1,8 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to keep stored contact forms for the shortcode.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
-use std::sync::Arc;
+use std::collections::HashMap;
+use std::sync::{Arc, RwLock as SyncRwLock};
 
 use sea_orm::DatabaseConnection;
 use tokio::sync::RwLock;
@@ -53,6 +54,8 @@ pub struct AppState {
     pub field_registry: Arc<RwLock<FieldGroupRegistry>>,
     pub field_storage: Arc<RwLock<FieldStorage>>,
     pub form_submissions: Arc<SubmissionStore>,
+    /// Contact form id to (title, template), read by the contact-form-7 shortcode.
+    pub contact_forms: Arc<SyncRwLock<HashMap<u64, (String, String)>>>,
     pub product_catalog: Arc<RwLock<ProductCatalog>>,
     pub cart_manager: Arc<RwLock<CartManager>>,
     pub order_manager: Arc<RwLock<OrderManager>>,

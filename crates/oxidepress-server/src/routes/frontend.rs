@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to put the saved homepage SEO title on the public home page.
+// Modified by Vabian124 on 2026-11-07 to expand shortcodes inside rendered blocks.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -1157,6 +1157,7 @@ async fn single_post_by_slug(
                 let rendered = oxidepress_blocks::with_render_context(&render_ctx, || {
                     state.block_renderer.render_blocks(&blocks)
                 });
+                let rendered = state.shortcodes.do_shortcode(&rendered);
                 context.insert("the_content", &rendered);
             }
 

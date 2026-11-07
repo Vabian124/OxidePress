@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to show custom fields on the product editor.
+// Modified by Vabian124 on 2026-11-07 to show custom fields and publish saved contact forms.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -1200,7 +1200,7 @@ async fn cf7_forms_save(
         post_author: Set(session.user_id),
         post_date: Set(now),
         post_date_gmt: Set(now),
-        post_content: Set(template),
+        post_content: Set(template.clone()),
         post_title: Set(form.form_title.clone()),
         post_excerpt: Set(String::new()),
         post_status: Set("publish".into()),
@@ -1213,6 +1213,11 @@ async fn cf7_forms_save(
     };
 
     if let Ok(result) = cf7_post.insert(&state.db).await {
+        state
+            .contact_forms
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(result.id, (form.form_title.clone(), template.clone()));
         if let Some(ref mail_to) = form.form_mail_to {
             if !mail_to.is_empty() {
                 let _ = queries::set_post_meta(&state.db, result.id, "_mail_to", mail_to).await;

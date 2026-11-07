@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to render store pages in the active theme.
+// Modified by Vabian124 on 2026-11-07 to register the contact form shortcode.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -218,6 +218,8 @@ async fn main() -> Result<()> {
     // Initialize shortcode registry with built-in shortcodes
     let shortcodes = oxidepress_core::shortcode::ShortcodeRegistry::new();
     register_builtin_shortcodes(&shortcodes);
+    let contact_forms = Arc::new(std::sync::RwLock::new(load_contact_forms(&db).await));
+    register_contact_form_shortcode(&shortcodes, contact_forms.clone());
     info!("shortcode registry initialized with built-in shortcodes");
 
     // Initialize cron system (before AppState so it can be stored in state)
@@ -379,6 +381,7 @@ async fn main() -> Result<()> {
         field_registry,
         field_storage,
         form_submissions,
+        contact_forms,
         product_catalog,
         cart_manager,
         order_manager,
@@ -615,6 +618,60 @@ async fn main() -> Result<()> {
         .await?;
 
     Ok(())
+}
+
+async fn load_contact_forms(
+    db: &sea_orm::DatabaseConnection,
+) -> std::collections::HashMap<u64, (String, String)> {
+    use oxidepress_db::entities::wp_posts;
+    use oxidepress_db::queries;
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
+    let posts = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq("wpcf7_contact_form"))
+        .filter(wp_posts::Column::PostStatus.eq("publish"))
+        .all(db)
+        .await
+        .unwrap_or_default();
+    let mut forms = std::collections::HashMap::new();
+    for post in posts {
+        let mut template = post.post_content;
+        if template.trim().is_empty() {
+            template = queries::get_post_meta_value(db, post.id, "_form")
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
+        }
+        forms.insert(post.id, (post.post_title, template));
+    }
+    forms
+}
+
+fn register_contact_form_shortcode(
+    registry: &oxidepress_core::shortcode::ShortcodeRegistry,
+    forms: Arc<std::sync::RwLock<std::collections::HashMap<u64, (String, String)>>>,
+) {
+    registry.add_shortcode(
+        "contact-form-7",
+        Arc::new(move |attrs, _| {
+            let Some(id) = attrs.get("id").and_then(|raw| raw.parse::<u64>().ok()) else {
+                return String::new();
+            };
+            let guard = forms
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let Some((title, template)) = guard.get(&id) else {
+                return String::new();
+            };
+            oxidepress_forms::render_stored_contact_form(
+                id,
+                title,
+                template,
+                &format!("/forms/cf7_{id}/submit"),
+            )
+        }),
+    );
 }
 
 /// Register built-in WordPress shortcodes (caption, audio, video, gallery, embed).
