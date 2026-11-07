@@ -34,14 +34,14 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - `/{year}/`, `/{year}/{month}/`, and `/{year}/{month}/{day}/` list the published posts from that date.
 - The public post lists approved comments only, and the stored comment count counts those same rows.
 - A logged-in comment stores that account’s display name, email, and user id when the form leaves the name blank.
+- When `require_name_email` is on, or the option is missing, a guest comment without an email is refused. A logged-in account can still comment.
+- A reply with `comment_parent` is listed under that comment.
 
 ## Next, in order
 
 | # | Work | Crate | Done when |
 |---|---|---|---|
-| 1 | Name and email required | `oxidepress-server` | When `require_name_email` is on, a guest comment without an email is refused. A logged-in account can still comment. |
-| 2 | Commenter address | `oxidepress-server` | A new comment stores the visitor address, and the comments screen shows it. |
-| 3 | Reply parent | `oxidepress-server` | A reply with `comment_parent` is listed under that comment. |
+| 1 | Commenter address | `oxidepress-server` | A new comment stores the visitor address, and the comments screen shows it. |
 
 ## Not this plan
 

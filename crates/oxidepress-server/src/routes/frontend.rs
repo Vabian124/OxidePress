@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to sign comments with the logged-in account.
+// Modified by Vabian124 on 2026-11-07 to require a guest email when that setting is on.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -1875,7 +1875,15 @@ async fn submit_comment(
     } else {
         let author = form.author.as_deref().unwrap_or("").trim().to_string();
         let email = form.email.as_deref().unwrap_or("").trim().to_string();
-        if author.is_empty() {
+        let require_email = state
+            .options
+            .get_option("require_name_email")
+            .await
+            .ok()
+            .flatten()
+            .map(|value| value != "0")
+            .unwrap_or(true);
+        if author.is_empty() || (require_email && email.is_empty()) {
             return Redirect::to(&format!("/{}?comment_error=required", form.comment_post_id))
                 .into_response();
         }
