@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to refuse addresses stored in the block list.
+// Modified by Vabian124 on 2026-11-07 to honor the firewall switch and the saved rate limit.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -361,6 +361,16 @@ pub async fn waf_check(
         }
     }
 
+    let firewall_raw = state
+        .options
+        .get_option("wf_firewall_enabled")
+        .await
+        .ok()
+        .flatten();
+    if matches!(firewall_raw.as_deref(), Some("0")) {
+        return next.run(request).await;
+    }
+
     let method = request.method().to_string();
     let query = request.uri().query().unwrap_or("").to_string();
 
@@ -401,7 +411,42 @@ pub async fn rate_limit(
     let ip = extract_client_ip(&request);
     let path = request.uri().path().to_string();
 
+    let rate_raw = state
+        .options
+        .get_option("wf_rate_limit_enabled")
+        .await
+        .ok()
+        .flatten();
+    if matches!(rate_raw.as_deref(), Some("0")) {
+        return next.run(request).await;
+    }
+    let max_requests = state
+        .options
+        .get_option("wf_rate_limit_maxRequestsPerMin")
+        .await
+        .ok()
+        .flatten()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(120)
+        .clamp(1, 10_000);
+
     let mut limiter = state.rate_limiter.write().await;
+    let config = oxidepress_security::rate_limiter::RateLimitConfig {
+        max_requests,
+        window_secs: 60,
+    };
+    limiter.set_config(
+        oxidepress_security::rate_limiter::EndpointCategory::General,
+        config.clone(),
+    );
+    limiter.set_config(
+        oxidepress_security::rate_limiter::EndpointCategory::Api,
+        config.clone(),
+    );
+    limiter.set_config(
+        oxidepress_security::rate_limiter::EndpointCategory::Login,
+        config,
+    );
     let result = limiter.check(&ip, &path);
     drop(limiter);
 
