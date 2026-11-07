@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to reduce product stock when an order is placed.
+// Modified by Vabian124 on 2026-11-07 to accept a trailing slash on shop pages.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -146,11 +146,16 @@ fn picture_html(product: &woo_compat::WooProductData) -> String {
 pub fn routes(state: Arc<AppState>) -> Router {
     Router::new()
         .route("/shop", get(shop_page))
+        .route("/shop/", get(shop_page))
         .route("/shop/product/{id}", get(product_page))
+        .route("/shop/product/{id}/", get(product_page))
         .route("/cart", get(cart_page))
+        .route("/cart/", get(cart_page))
         .route("/cart/add", post(cart_add_form))
         .route("/checkout", get(checkout_page))
+        .route("/checkout/", get(checkout_page))
         .route("/checkout/thank-you/{order_id}", get(thank_you_page))
+        .route("/checkout/thank-you/{order_id}/", get(thank_you_page))
         .route("/api/cart/add", post(cart_add))
         .route("/api/cart/remove/{product_id}", post(cart_remove))
         .route("/api/cart", get(cart_get))

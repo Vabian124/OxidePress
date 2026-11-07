@@ -41,6 +41,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - The comments screen names the post a comment belongs to. The All count stays the full total when another status is selected.
 - `/comments/feed/` names the post and links to that post’s permalink with the comment anchor. A recent-comments widget uses the same permalink.
 - Approving, holding, spamming, trashing, or deleting a comment rewrites the post’s stored comment count to the approved rows.
+- `/shop/`, `/cart/`, `/checkout/`, and `/shop/product/{id}/` serve the same pages as the links without a trailing slash.
 
 ## Next, in order
 
