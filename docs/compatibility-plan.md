@@ -37,6 +37,7 @@ Each item names one crate. Finish and commit that crate before opening the next 
 - When `require_name_email` is on, or the option is missing, a guest comment without an email is refused. A logged-in account can still comment.
 - A reply with `comment_parent` is listed under that comment.
 - A new comment stores the visitor address. The comments screen shows that address under the author.
+- A signed-in visitor sees “Logged in as” their display name on the comment form, and the form does not ask for a name or email.
 
 ## Next, in order
 

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to store the visitor address on a new comment.
+// Modified by Vabian124 on 2026-11-07 to show the signed-in account on the comment form.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -1279,6 +1279,22 @@ async fn single_post_by_slug(
                     })
                     .collect();
                 context.insert("post_meta", &filtered_meta);
+            }
+
+            if let Some(user) = signed_in_commenter(state, headers).await {
+                let display_name = if user.display_name.trim().is_empty() {
+                    user.user_login.clone()
+                } else {
+                    user.display_name.trim().to_string()
+                };
+                context.insert(
+                    "current_user",
+                    &serde_json::json!({
+                        "display_name": display_name,
+                        "login": user.user_login,
+                        "user_id": user.id,
+                    }),
+                );
             }
 
             // Load approved comments for this post and build threaded tree
