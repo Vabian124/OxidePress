@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to refuse blocking the server's own address.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Wordfence compatibility layer.
@@ -176,15 +176,10 @@ impl WordfenceSettings {
     ///
     /// Returns `true` if the request is allowed, `false` if it should be blocked.
     pub fn check_ip(&self, ip: &str) -> bool {
-        // Whitelisted IPs always pass
-        if self.is_ip_whitelisted(ip) {
+        if is_own_address(ip) || self.is_ip_whitelisted(ip) {
             return true;
         }
-        // Blocked IPs are denied
-        if self.is_ip_blocked(ip) {
-            return false;
-        }
-        true
+        !self.is_ip_blocked(ip)
     }
 
     /// Check if an IP is blocked.
@@ -198,10 +193,13 @@ impl WordfenceSettings {
     }
 
     /// Add an IP to the blocked list.
-    pub fn block_ip(&mut self, ip: &str) {
-        if !self.is_ip_blocked(ip) {
-            self.blocked_ips.push(ip.to_string());
+    pub fn block_ip(&mut self, ip: &str) -> bool {
+        let ip = ip.trim();
+        if ip.is_empty() || is_own_address(ip) || self.is_ip_blocked(ip) {
+            return false;
         }
+        self.blocked_ips.push(ip.to_string());
+        true
     }
 
     /// Remove an IP from the blocked list.
@@ -225,6 +223,12 @@ fn parse_u32(val: Option<&String>, default: u32) -> u32 {
 
 fn bool_to_str(b: bool) -> String {
     if b { "1" } else { "0" }.to_string()
+}
+
+/// Loopback and unspecified addresses are the server itself. They stay reachable.
+pub fn is_own_address(ip: &str) -> bool {
+    let ip = ip.trim().trim_matches(|ch| ch == '[' || ch == ']');
+    ip == "localhost" || ip == "0.0.0.0" || ip == "::1" || ip == "::" || ip.starts_with("127.")
 }
 
 fn parse_ip_list(raw: &str) -> Vec<String> {
@@ -337,6 +341,20 @@ mod tests {
         assert!(settings.unblock_ip("192.168.1.1"));
         assert!(!settings.is_ip_blocked("192.168.1.1"));
         assert!(!settings.unblock_ip("nonexistent"));
+    }
+
+    #[test]
+    fn own_address_cannot_be_blocked() {
+        let mut settings = WordfenceSettings::default();
+        assert!(!settings.block_ip("127.0.0.1"));
+        assert!(!settings.block_ip("::1"));
+        assert!(settings.blocked_ips.is_empty());
+
+        settings.blocked_ips.push("127.0.0.1".into());
+        settings.blocked_ips.push("203.0.113.50".into());
+        assert!(settings.check_ip("127.0.0.1"));
+        assert!(!settings.check_ip("203.0.113.50"));
+        assert!(settings.check_ip("198.51.100.10"));
     }
 
     #[test]

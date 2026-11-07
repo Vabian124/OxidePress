@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-07 to export the own-address check.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! OxidePress Security - WAF, rate limiting, login protection, and security scanning.
@@ -31,4 +31,4 @@ pub use rate_limiter::{RateLimitResult, RateLimiter};
 pub use scanner::{CheckStatus, SecurityCheck, SecurityScanner};
 pub use ssrf::{validate_resolved_ip, validate_url};
 pub use waf::{WafAction, WafEngine, WafResult, WafRule};
-pub use wordfence_compat::WordfenceSettings;
+pub use wordfence_compat::{is_own_address, WordfenceSettings};
