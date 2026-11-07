@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to accept a trailing slash on shop pages.
+// Modified by Vabian124 on 2026-11-07 to serve the official WooCommerce product permalink.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -125,13 +125,49 @@ async fn published_products(state: &AppState) -> Vec<woo_compat::WooProductData>
     products
 }
 
+fn product_path(product: &woo_compat::WooProductData) -> String {
+    format!("/product/{}/", product.slug)
+}
+
+fn amount_html(price: f64) -> String {
+    format!(
+        r#"<span class="woocommerce-Price-amount amount"><bdi><span class="woocommerce-Price-currencySymbol">&#36;</span>{price:.2}</bdi></span>"#
+    )
+}
+
 fn price_html(product: &woo_compat::WooProductData) -> String {
     match product.sale_price {
         Some(sale) if sale > 0.0 && sale < product.regular_price => format!(
-            r#"<p class="price"><del>${:.2}</del><ins>${:.2}</ins></p>"#,
-            product.regular_price, sale
+            r#"<p class="price"><del aria-hidden="true">{regular}</del> <ins>{sale}</ins></p>"#,
+            regular = amount_html(product.regular_price),
+            sale = amount_html(sale),
         ),
-        _ => format!(r#"<p class="price">${:.2}</p>"#, product.price),
+        _ => format!(r#"<p class="price">{}</p>"#, amount_html(product.price)),
+    }
+}
+
+fn stock_html(product: &woo_compat::WooProductData) -> String {
+    match product.stock_status.as_str() {
+        "outofstock" => r#"<p class="stock out-of-stock">Out of stock</p>"#.to_string(),
+        "onbackorder" => {
+            r#"<p class="stock available-on-backorder">Available on backorder</p>"#.to_string()
+        }
+        _ if product.manage_stock => {
+            let quantity = product.stock_quantity.unwrap_or(0);
+            format!(r#"<p class="stock in-stock">{quantity} in stock</p>"#)
+        }
+        _ => r#"<p class="stock in-stock">In stock</p>"#.to_string(),
+    }
+}
+
+fn sku_html(product: &woo_compat::WooProductData) -> String {
+    if product.sku.is_empty() {
+        String::new()
+    } else {
+        format!(
+            r#"<span class="sku_wrapper">SKU: <span class="sku">{}</span></span>"#,
+            esc(&product.sku)
+        )
     }
 }
 
@@ -149,6 +185,8 @@ pub fn routes(state: Arc<AppState>) -> Router {
         .route("/shop/", get(shop_page))
         .route("/shop/product/{id}", get(product_page))
         .route("/shop/product/{id}/", get(product_page))
+        .route("/product/{slug}", get(product_by_slug))
+        .route("/product/{slug}/", get(product_by_slug))
         .route("/cart", get(cart_page))
         .route("/cart/", get(cart_page))
         .route("/cart/add", post(cart_add_form))
@@ -176,9 +214,9 @@ async fn shop_page(State(state): State<Arc<AppState>>) -> Html<String> {
         body.push_str(r#"<div class="products">"#);
         for product in products {
             body.push_str(&format!(
-                r#"<article class="product">{picture}<h2><a href="/shop/product/{id}">{name}</a></h2>{price}<p>{summary}</p></article>"#,
+                r#"<article class="product">{picture}<h2><a href="{permalink}">{name}</a></h2>{price}<p>{summary}</p></article>"#,
                 picture = picture_html(&product),
-                id = product.post_id,
+                permalink = product_path(&product),
                 name = esc(&product.name),
                 price = price_html(&product),
                 summary = esc(&product.short_description),
@@ -198,22 +236,55 @@ async fn product_page(
         .into_iter()
         .find(|product| product.post_id == id)
         .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(render_product(&state, &product).await)
+}
+
+async fn product_by_slug(
+    State(state): State<Arc<AppState>>,
+    Path(slug): Path<String>,
+) -> Result<Html<String>, StatusCode> {
+    let product = published_products(&state)
+        .await
+        .into_iter()
+        .find(|product| product.slug == slug)
+        .ok_or(StatusCode::NOT_FOUND)?;
+    Ok(render_product(&state, &product).await)
+}
+
+async fn render_product(state: &AppState, product: &woo_compat::WooProductData) -> Html<String> {
+    let summary = if product.short_description.is_empty() {
+        product.description.as_str()
+    } else {
+        product.short_description.as_str()
+    };
+    let long = if !product.description.is_empty() && product.description != summary {
+        format!(
+            r#"<div class="woocommerce-product-details__description">{}</div>"#,
+            esc(&product.description)
+        )
+    } else {
+        String::new()
+    };
     let body = format!(
-        r#"<article class="single-product">{picture}<h1>{name}</h1>{price}<div class="description">{description}</div>
-<form method="post" action="/cart/add">
+        r#"<article class="single-product product type-product">{picture}<h1 class="product_title entry-title">{name}</h1>{price}{sku}{stock}<div class="woocommerce-product-details__short-description">{summary}</div>
+<form class="cart" method="post" action="/cart/add">
   <input type="hidden" name="product_id" value="{id}">
   <label>Quantity <input type="number" name="quantity" value="1" min="1" style="width:4rem"></label>
-  <button type="submit">Add to cart</button>
+  <button type="submit" name="add-to-cart" value="{id}">Add to cart</button>
 </form>
-<p><a href="/shop">Back to the shop</a></p>
+{long}
+<p><a href="/shop/">Back to the shop</a></p>
 </article>"#,
-        picture = picture_html(&product),
+        picture = picture_html(product),
         name = esc(&product.name),
-        price = price_html(&product),
-        description = esc(&product.description),
+        price = price_html(product),
+        sku = sku_html(product),
+        stock = stock_html(product),
+        summary = esc(summary),
         id = product.post_id,
+        long = long,
     );
-    Ok(present(&state, &product.name, "oxide-product", &body).await)
+    present(state, &product.name, "oxide-product", &body).await
 }
 
 async fn add_product_to_cart(state: &AppState, key: &str, product_id: u64, quantity: u32) -> bool {
@@ -684,4 +755,32 @@ async fn order_detail(
     let order_mgr = state.order_manager.read().await;
     let order = order_mgr.get_order(id).ok_or(StatusCode::NOT_FOUND)?;
     Ok(Json(serde_json::json!(order)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use oxidepress_commerce::woo_compat::WooProductData;
+
+    #[test]
+    fn sale_price_uses_the_woocommerce_amount_and_product_base() {
+        let product = WooProductData {
+            slug: "ceramic-mug".to_string(),
+            sku: "MUG-1".to_string(),
+            price: 16.0,
+            regular_price: 24.0,
+            sale_price: Some(16.0),
+            stock_quantity: Some(12),
+            stock_status: "instock".to_string(),
+            manage_stock: true,
+            ..WooProductData::default()
+        };
+        assert_eq!(product_path(&product), "/product/ceramic-mug/");
+        let price = price_html(&product);
+        assert!(price.contains("woocommerce-Price-amount"));
+        assert!(price.contains("24.00"));
+        assert!(price.contains("16.00"));
+        assert!(sku_html(&product).contains("MUG-1"));
+        assert!(stock_html(&product).contains("12 in stock"));
+    }
 }
