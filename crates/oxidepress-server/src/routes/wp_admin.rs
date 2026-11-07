@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress and add the login log page.
+// Modified by Vabian124 on 2026-11-07 to mark the serving theme as active.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -3963,6 +3963,17 @@ fn parse_widget_form(body: &str) -> widgets::WidgetConfig {
     widgets::WidgetConfig { areas }
 }
 
+async fn active_theme_slug(state: &AppState) -> String {
+    state.theme_engine.read().await.active_theme().to_string()
+}
+
+async fn save_active_theme(state: &AppState, slug: &str) -> Result<(), sea_orm::DbErr> {
+    state.options.update_option("template", slug).await?;
+    state.options.update_option("stylesheet", slug).await?;
+    state.options.update_option("current_theme", slug).await?;
+    Ok(())
+}
+
 // --- Themes ---
 
 async fn themes_page(
@@ -3973,14 +3984,7 @@ async fn themes_page(
     let mut ctx = admin_context(&state, &session).await;
     ctx.insert("active_page", "themes");
 
-    // Determine the active theme slug from wp_options (default: "default").
-    let active_slug = state
-        .options
-        .get_option("current_theme")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "default".to_string());
+    let active_slug = active_theme_slug(&state).await;
 
     // Discover available themes.
     let themes_dir = Path::new("themes");
@@ -4011,13 +4015,7 @@ async fn themes_activate(
     // Verify the theme actually exists before activating.
     let themes_dir = Path::new("themes");
     let templates_dir = Path::new("templates");
-    let active_slug = state
-        .options
-        .get_option("current_theme")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_else(|| "default".to_string());
+    let active_slug = active_theme_slug(&state).await;
 
     let available = ThemeEngine::discover_themes(themes_dir, templates_dir, &active_slug);
     let theme_exists = available.iter().any(|t| t.slug == theme_slug);
@@ -4032,12 +4030,7 @@ async fn themes_activate(
         return render_admin(&state, "admin/themes.html", &ctx).into_response();
     }
 
-    // Save the new active theme to wp_options.
-    if let Err(e) = state
-        .options
-        .update_option("current_theme", theme_slug)
-        .await
-    {
+    if let Err(e) = save_active_theme(&state, theme_slug).await {
         tracing::error!("Failed to save theme option: {}", e);
         let mut ctx = admin_context(&state, &session).await;
         ctx.insert("active_page", "themes");
@@ -4064,10 +4057,7 @@ async fn themes_activate(
             Err(e) => {
                 tracing::error!("Failed to reload theme engine: {}", e);
                 // Rollback the option to the previous theme.
-                let _ = state
-                    .options
-                    .update_option("current_theme", &active_slug)
-                    .await;
+                let _ = save_active_theme(&state, &active_slug).await;
             }
         }
     }
