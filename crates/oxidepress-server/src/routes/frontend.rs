@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to name the post in the comments feed.
+// Modified by Vabian124 on 2026-11-07 to render official Yoast SEO head tags.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -291,7 +291,11 @@ async fn render_theme_page(
 ) -> Result<Html<String>, (StatusCode, Html<String>)> {
     let engine = state.theme_engine.read().await;
     match engine.render_page(page_type, context) {
-        Ok(html) => Ok(Html(link_rendered_navigation(state, html).await)),
+        Ok(html) => {
+            let html = link_rendered_navigation(state, html).await;
+            let html = apply_listing_yoast(state, page_type, context, html).await;
+            Ok(Html(html))
+        }
         Err(e) => {
             tracing::error!("Template render error: {}", e);
             Err((
@@ -353,60 +357,26 @@ async fn navigation_targets(state: &AppState) -> Vec<(String, String)> {
 }
 
 async fn with_homepage_seo(state: &AppState, page: Html<String>) -> Html<String> {
-    let title = state
-        .options
-        .get_option("_yoast_wpseo_title-homepage")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let description = state
-        .options
-        .get_option("_yoast_wpseo_metadesc-homepage")
-        .await
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    if title.trim().is_empty() && description.trim().is_empty() {
-        return page;
-    }
+    let yoast = super::yoast_store::active_yoast(state).await;
     let site_name = state.options.get_blogname().await.unwrap_or_default();
     let site_description = state
         .options
         .get_blogdescription()
         .await
         .unwrap_or_default();
-    let separator = state
-        .options
-        .get_option("_yoast_wpseo_separator")
-        .await
-        .ok()
-        .flatten()
-        .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "-".to_string());
-    let title = expand_home_seo(title.trim(), &site_name, &site_description, &separator);
-    let description = expand_home_seo(
-        description.trim(),
+    let (locale, language) = yoast_locale(state).await;
+    let home = format!("{}/", state.site_url.trim_end_matches('/'));
+    let head = oxidepress_seo::yoast_present::present_front(
+        &yoast.titles,
+        &yoast.social,
+        &yoast.general,
         &site_name,
         &site_description,
-        &separator,
+        &home,
+        &locale,
+        &language,
     );
-    Html(apply_document_head(&page.0, &title, &description))
-}
-
-fn expand_home_seo(
-    template: &str,
-    site_name: &str,
-    site_description: &str,
-    separator: &str,
-) -> String {
-    template
-        .replace("%%sitename%%", site_name)
-        .replace("%%sitedesc%%", site_description)
-        .replace("%%sep%%", separator)
-        .replace("%%title%%", site_name)
-        .trim()
-        .to_string()
+    Html(apply_yoast_document(&page.0, &head))
 }
 
 pub(crate) fn apply_document_head(html: &str, title: &str, description: &str) -> String {
@@ -447,6 +417,178 @@ fn escape_text(value: &str) -> String {
 
 fn escape_attr(value: &str) -> String {
     escape_text(value).replace('"', "&quot;")
+}
+
+fn apply_yoast_document(html: &str, head: &oxidepress_seo::yoast_present::YoastHead) -> String {
+    let mut html = apply_document_head(html, &head.title, "");
+    html = replace_robots_meta(&html, &head.robots);
+    if html.contains("yoast-schema-graph") {
+        return html;
+    }
+    if let Some(idx) = html.find("</title>") {
+        html.insert_str(idx + "</title>".len(), &format!("\n{}", head.markup));
+    }
+    html
+}
+
+fn replace_robots_meta(html: &str, robots: &str) -> String {
+    let tag = format!("<meta name='robots' content='{}' />", escape_attr(robots));
+    for needle in ["<meta name='robots'", "<meta name=\"robots\""] {
+        if let Some(start) = html.find(needle) {
+            if let Some(rel_end) = html[start..].find('>') {
+                let mut html = html.to_string();
+                html.replace_range(start..start + rel_end + 1, &tag);
+                return html;
+            }
+        }
+    }
+    if let Some(idx) = html.find("</title>") {
+        let mut html = html.to_string();
+        html.insert_str(idx + "</title>".len(), &format!("\n{tag}"));
+        return html;
+    }
+    html.to_string()
+}
+
+async fn yoast_locale(state: &AppState) -> (String, String) {
+    let stored = state
+        .options
+        .get_option("WPLANG")
+        .await
+        .ok()
+        .flatten()
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "en_US".to_string());
+    let language = stored.replace('_', "-");
+    (stored, language)
+}
+
+async fn apply_listing_yoast(
+    state: &AppState,
+    page_type: &PageType,
+    context: &tera::Context,
+    html: String,
+) -> String {
+    use oxidepress_seo::yoast_present::{present_listing, ListingKind, ListingSeo};
+
+    let kind = match page_type {
+        PageType::Category { .. } => ListingKind::Category,
+        PageType::Tag { .. } => ListingKind::Tag,
+        PageType::Author { .. } => ListingKind::Author,
+        PageType::DateArchive => ListingKind::Date,
+        PageType::Search => ListingKind::Search,
+        PageType::NotFound => ListingKind::NotFound,
+        _ => return html,
+    };
+    let yoast = super::yoast_store::active_yoast(state).await;
+    let site_name = state.options.get_blogname().await.unwrap_or_default();
+    let site_description = state
+        .options
+        .get_blogdescription()
+        .await
+        .unwrap_or_default();
+    let (locale, language) = yoast_locale(state).await;
+    let root = state.site_url.trim_end_matches('/').to_string();
+    let home = format!("{root}/");
+    let (name, permalink) = listing_label(page_type, context, &root);
+    let head = present_listing(
+        &yoast.titles,
+        &yoast.social,
+        &yoast.general,
+        &ListingSeo {
+            kind,
+            name: &name,
+            permalink: &permalink,
+            site_name: &site_name,
+            site_description: &site_description,
+            home_url: &home,
+            locale: &locale,
+            language: &language,
+        },
+    );
+    apply_yoast_document(&html, &head)
+}
+
+fn listing_label(page_type: &PageType, context: &tera::Context, root: &str) -> (String, String) {
+    let text = |key: &str| {
+        context
+            .get(key)
+            .and_then(|value| value.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
+    let number = |key: &str| -> Option<u32> {
+        context.get(key).and_then(|value| {
+            value
+                .as_u64()
+                .or_else(|| value.as_i64().map(|item| item as u64))
+                .map(|item| item as u32)
+        })
+    };
+    match page_type {
+        PageType::Category { slug, .. } => (text("term_name"), format!("{root}/category/{slug}/")),
+        PageType::Tag { slug, .. } => (text("term_name"), format!("{root}/tag/{slug}/")),
+        PageType::Author { nicename, .. } => {
+            (text("author_name"), format!("{root}/author/{nicename}/"))
+        }
+        PageType::Search => {
+            let phrase = text("search_query");
+            (
+                phrase.clone(),
+                format!("{root}/?s={}", query_escape(&phrase)),
+            )
+        }
+        PageType::DateArchive => {
+            let year = number("archive_year");
+            let month = number("archive_month");
+            let day = number("archive_day");
+            let name = match (year, month, day) {
+                (Some(year), Some(month), Some(day)) => {
+                    format!("{} {day}, {year}", month_to_name(month))
+                }
+                (Some(year), Some(month), None) => format!("{} {year}", month_to_name(month)),
+                (Some(year), None, None) => year.to_string(),
+                _ => text("archive_title"),
+            };
+            let permalink = match (year, month, day) {
+                (Some(year), Some(month), Some(day)) => {
+                    format!("{root}/{year:04}/{month:02}/{day:02}/")
+                }
+                (Some(year), Some(month), None) => format!("{root}/{year:04}/{month:02}/"),
+                (Some(year), None, None) => format!("{root}/{year:04}/"),
+                _ => format!("{root}/"),
+            };
+            (name, permalink)
+        }
+        PageType::NotFound => {
+            let uri = text("request_uri");
+            let permalink = if uri.starts_with("http") {
+                uri.clone()
+            } else if uri.is_empty() {
+                format!("{root}/")
+            } else if uri.starts_with('/') {
+                format!("{root}{uri}")
+            } else {
+                format!("{root}/{uri}")
+            };
+            ("Page not found".to_string(), permalink)
+        }
+        _ => (String::new(), format!("{root}/")),
+    }
+}
+
+fn query_escape(value: &str) -> String {
+    let mut out = String::new();
+    for byte in value.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(byte as char);
+            }
+            b' ' => out.push('+'),
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
 }
 
 pub(crate) fn link_placeholder_nav(html: &str, targets: &[(String, String)]) -> String {
@@ -1198,6 +1340,7 @@ async fn single_post_by_slug(
             );
 
             // Load featured image
+            let mut featured_for_seo = String::new();
             let thumb_meta = wp_postmeta::Entity::find()
                 .filter(wp_postmeta::Column::PostId.eq(post_id))
                 .filter(wp_postmeta::Column::MetaKey.eq("_thumbnail_id"))
@@ -1211,7 +1354,8 @@ async fn single_post_by_slug(
                         if let Ok(Some(att)) =
                             wp_posts::Entity::find_by_id(mid).one(&state.db).await
                         {
-                            context.insert("featured_image_url", &att.guid);
+                            featured_for_seo = att.guid.clone();
+                            context.insert("featured_image_url", &featured_for_seo);
                         }
                     }
                 }
@@ -1220,6 +1364,7 @@ async fn single_post_by_slug(
             // Load all postmeta for plugin compatibility:
             // Yoast SEO, ACF, WooCommerce, Elementor, and any other plugin using wp_postmeta.
             let all_meta = load_all_postmeta(&state.db, post_id).await;
+            let seo_meta_map = all_meta.clone();
             if !all_meta.is_empty() {
                 // Yoast SEO: override auto-generated SEO meta if Yoast data is present
                 let has_yoast = all_meta.contains_key("_yoast_wpseo_title")
@@ -1317,10 +1462,12 @@ async fn single_post_by_slug(
             context.insert("comment_nonce", &comment_nonce);
 
             // Load author info
+            let mut author_for_seo = String::new();
             if let Ok(Some(author)) = wp_users::Entity::find_by_id(p.post_author)
                 .one(&state.db)
                 .await
             {
+                author_for_seo = author.display_name.clone();
                 context.insert("author_name", &author.display_name);
                 context.insert("author_slug", &author.user_nicename);
             }
@@ -1415,24 +1562,67 @@ async fn single_post_by_slug(
                 }
             } else {
                 PageType::Single {
-                    post_type,
+                    post_type: post_type.clone(),
                     slug: slug.to_string(),
                 }
             };
 
-            render_theme_page(state, &page_type, &context).await
+            let rewrite = state.rewrite_rules.read().await;
+            let permalink =
+                PostTemplateData::from_model_with_rewrite(&p, &state.site_url, &rewrite).permalink;
+            drop(rewrite);
+            let yoast = super::yoast_store::active_yoast(state).await;
+            let (locale, language) = yoast_locale(state).await;
+            let home = format!("{}/", state.site_url.trim_end_matches('/'));
+            let site_description = state
+                .options
+                .get_blogdescription()
+                .await
+                .unwrap_or_default();
+            let primary_category = cats
+                .first()
+                .and_then(|item| item.get("name"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("")
+                .to_string();
+            let published = format!("{}+00:00", p.post_date_gmt.format("%Y-%m-%dT%H:%M:%S"));
+            let modified = format!("{}+00:00", p.post_modified_gmt.format("%Y-%m-%dT%H:%M:%S"));
+            let head = oxidepress_seo::yoast_present::present_singular(
+                &yoast.titles,
+                &yoast.social,
+                &yoast.general,
+                &oxidepress_seo::yoast_present::SingularSeo {
+                    post_type: &post_type,
+                    title: &p.post_title,
+                    excerpt: &p.post_excerpt,
+                    content: &p.post_content,
+                    permalink: &permalink,
+                    site_name: &site_name,
+                    site_description: &site_description,
+                    home_url: &home,
+                    locale: &locale,
+                    language: &language,
+                    author_name: &author_for_seo,
+                    published: &published,
+                    modified: &modified,
+                    featured_image: if featured_for_seo.is_empty() {
+                        None
+                    } else {
+                        Some(featured_for_seo.as_str())
+                    },
+                    primary_category: &primary_category,
+                    meta: &seo_meta_map,
+                },
+            );
+            let rendered = render_theme_page(state, &page_type, &context).await?;
+            Ok(Html(apply_yoast_document(&rendered.0, &head)))
         }
         None => {
-            // 404
             let mut context = build_base_context(state).await;
             context.insert("request_uri", &format!("/{slug}"));
-            let engine = state.theme_engine.read().await;
-            match engine.render_page(&PageType::NotFound, &context) {
-                Ok(html) => Err((StatusCode::NOT_FOUND, Html(html))),
-                Err(_) => Err((
-                    StatusCode::NOT_FOUND,
-                    Html("<h1>404 - Not Found</h1>".to_string()),
-                )),
+            match render_theme_page(state, &PageType::NotFound, &context).await {
+                Ok(html) => Err((StatusCode::NOT_FOUND, html)),
+                Err(error) => Err(error),
             }
         }
     }

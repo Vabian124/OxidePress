@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to reload the security settings that were saved.
+// Modified by Vabian124 on 2026-11-07 to store SEO settings in official Yoast options.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Admin pages for OxidePress plugin system.
@@ -787,48 +787,20 @@ async fn seo_settings_page(
     ctx.insert("active_page", "seo");
     ctx.insert("saved", &false);
 
-    let sep = state
-        .options
-        .get_option_or("_yoast_wpseo_separator", "-")
-        .await
-        .unwrap_or_else(|_| "-".into());
-    let homepage_title = state
-        .options
-        .get_option_or("_yoast_wpseo_title-homepage", "")
-        .await
-        .unwrap_or_default();
-    let homepage_desc = state
-        .options
-        .get_option_or("_yoast_wpseo_metadesc-homepage", "")
-        .await
-        .unwrap_or_default();
-    let post_title = state
-        .options
-        .get_option_or("_yoast_wpseo_title-post", "%%title%% %%sep%% %%sitename%%")
-        .await
-        .unwrap_or_else(|_| "%%title%% %%sep%% %%sitename%%".into());
-    let page_title = state
-        .options
-        .get_option_or("_yoast_wpseo_title-page", "%%title%% %%sep%% %%sitename%%")
-        .await
-        .unwrap_or_else(|_| "%%title%% %%sep%% %%sitename%%".into());
+    let yoast = super::yoast_store::active_yoast(&state).await;
+    let sep = yoast.titles.separator;
+    let homepage_title = yoast.titles.title_home;
+    let homepage_desc = yoast.titles.metadesc_home;
+    let post_title = yoast.titles.title_post;
+    let page_title = yoast.titles.title_page;
     let noindex_empty_cat = state
         .options
         .get_option_or("_yoast_wpseo_noindex-subpages", "0")
         .await
         .unwrap_or_else(|_| "0".into())
         == "1";
-    let og_default_image = state
-        .options
-        .get_option_or("_yoast_wpseo_og_default_image", "")
-        .await
-        .unwrap_or_default();
-    let og_enabled = state
-        .options
-        .get_option_or("_yoast_wpseo_opengraph", "1")
-        .await
-        .unwrap_or_else(|_| "1".into())
-        == "1";
+    let og_default_image = yoast.social.og_default_image;
+    let og_enabled = yoast.social.opengraph;
 
     let indexed_posts = wp_posts::Entity::find()
         .filter(wp_posts::Column::PostType.eq("post"))
@@ -936,9 +908,29 @@ async fn seo_settings_save(
         ),
     ];
 
-    for (key, value) in options {
-        let _ = state.options.update_option(key, &value).await;
+    for (key, value) in &options {
+        let _ = state.options.update_option(key, value).await;
     }
+
+    let mut yoast = super::yoast_store::active_yoast(&state).await;
+    let stored = |name: &str| {
+        options
+            .iter()
+            .find(|(key, _)| *key == name)
+            .map(|(_, value)| value.clone())
+            .unwrap_or_default()
+    };
+    let separator = stored("_yoast_wpseo_separator");
+    yoast.titles.separator_code = oxidepress_seo::yoast_options::separator_code(&separator);
+    yoast.titles.separator =
+        oxidepress_seo::yoast_options::separator_char(&yoast.titles.separator_code);
+    yoast.titles.title_home = stored("_yoast_wpseo_title-homepage");
+    yoast.titles.metadesc_home = stored("_yoast_wpseo_metadesc-homepage");
+    yoast.titles.title_post = stored("_yoast_wpseo_title-post");
+    yoast.titles.title_page = stored("_yoast_wpseo_title-page");
+    yoast.social.og_default_image = stored("_yoast_wpseo_og_default_image");
+    yoast.social.opengraph = stored("_yoast_wpseo_opengraph") != "0";
+    super::yoast_store::save_yoast_settings(&state, &yoast.titles, &yoast.social).await;
 
     seo_settings_page(State(state), Extension(session)).await
 }

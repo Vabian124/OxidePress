@@ -16,6 +16,7 @@ pub mod wc_api;
 pub mod wp_admin;
 #[allow(dead_code)]
 pub mod xmlrpc;
+pub(crate) mod yoast_store;
 
 use crate::state::AppState;
 
