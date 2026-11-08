@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-08 to let the PHP worker make public HTTP requests.
+// Modified by Vabian124 on 2026-11-08 to print enqueued scripts and styles.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -1000,6 +1000,65 @@ mod tests {
         );
         assert_eq!(runtime.take_output("admin_notices"), "Hello Dolly");
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+    }
+
+    #[test]
+    fn php_enqueued_assets_print_in_head_and_footer() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-assets-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("asset-queue");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("asset-queue.php"),
+            r#"<?php
+/**
+ * Plugin Name: Asset Queue
+ */
+add_action('wp_enqueue_scripts', function () {
+    wp_register_script('base', 'https://example.com/base.js', array(), '1');
+    wp_enqueue_script('app', 'https://example.com/app.js', array('base'), '2', true);
+    wp_enqueue_style('app', 'https://example.com/app.css', array(), '3');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime = PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "Asset Queue")
+            .unwrap();
+        let loaded = runtime.load(plugin).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        runtime.attach(&hooks, &shortcodes, &loaded);
+
+        hooks.do_action("wp_head", &json!({}));
+        hooks.do_action("wp_footer", &json!({}));
+
+        let head = runtime.take_output("wp_head");
+        let footer = runtime.take_output("wp_footer");
+        let css = head.find("id=\"app-css\"").expect(&head);
+        let base = head.find("id=\"base-js\"").expect(&head);
+        assert!(css < base, "{head}");
+        assert!(head.contains("https://example.com/app.css?ver=3"), "{head}");
+        assert!(head.contains("https://example.com/base.js?ver=1"), "{head}");
+        assert!(!head.contains("app.js"), "{head}");
+        assert!(footer.contains("id=\"app-js\""), "{footer}");
+        assert!(
+            footer.contains("https://example.com/app.js?ver=2"),
+            "{footer}"
+        );
+        assert!(!footer.contains("base.js"), "{footer}");
+        assert!(!footer.contains("app.css"), "{footer}");
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
     }
 
     fn slash(path: &Path) -> String {

@@ -34,7 +34,7 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 - プラグインが `wp-content/plugins` にあるとき、`ABSPATH` は `wp-content` を含むディレクトリである。そうでなければ、`wp-load.php` がある祖先を使う。どちらも無いときは、プラグインディレクトリの親である。プラグインディレクトリそのものではなく、このツリーは `wp-admin` も `wp-includes` も同梱しない。
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
 - プラグインを有効化すると、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
-- 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
+- `wp_enqueue_style` は `wp_head` に出力する。`wp_enqueue_script` は `wp_head` に出力し、フッター指定のスクリプトは `wp_footer` に出力する。投稿タイプ、管理メニュー、`register_setting` はワーカーの中に留まり、設定画面は描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。プライベートアドレス、内部ホスト名、それ以外のスキームは拒否する。リダイレクトは追わない。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。

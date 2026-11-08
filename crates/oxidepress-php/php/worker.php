@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-08 to let plugins call wp_remote_get and wp_remote_post.
+// Modified by Vabian124 on 2026-11-08 to print enqueued scripts and styles.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -30,6 +30,13 @@ $oxidepress_fatal_sent = false;
 $oxidepress_did = array();
 $oxidepress_post_types = array();
 $oxidepress_admin_menus = array();
+$oxidepress_scripts = array();
+$oxidepress_styles = array();
+$oxidepress_script_queue = array();
+$oxidepress_style_queue = array();
+$oxidepress_done_scripts = array();
+$oxidepress_done_styles = array();
+$oxidepress_asset_hooks = false;
 $GLOBALS['wp_version'] = '6.8.3';
 
 $oxidepress_plugins_dir = oxidepress_env('OXIDEPRESS_PLUGINS_DIR', '');
@@ -95,6 +102,11 @@ while (true) {
                     ob_end_clean();
                 }
                 throw $load_error;
+            }
+            if (!$oxidepress_asset_hooks) {
+                oxidepress_register('action', 'wp_head', 'oxidepress_print_head_assets', 8, 1);
+                oxidepress_register('action', 'wp_footer', 'oxidepress_print_footer_assets', 20, 1);
+                $oxidepress_asset_hooks = true;
             }
             oxidepress_write_frame(array(
                 'id' => $oxidepress_request_id,
@@ -1247,20 +1259,182 @@ function add_allowed_options($new_options, $options = '')
 
 function wp_enqueue_script($handle, $src = '', $deps = array(), $ver = false, $args = array())
 {
+    global $oxidepress_scripts, $oxidepress_script_queue;
+
+    $handle = (string)$handle;
+    if ($src !== '' || !isset($oxidepress_scripts[$handle])) {
+        wp_register_script($handle, $src, $deps, $ver, $args);
+    }
+    if (!in_array($handle, $oxidepress_script_queue, true)) {
+        $oxidepress_script_queue[] = $handle;
+    }
 }
 
 function wp_enqueue_style($handle, $src = '', $deps = array(), $ver = false, $media = 'all')
 {
+    global $oxidepress_styles, $oxidepress_style_queue;
+
+    $handle = (string)$handle;
+    if ($src !== '' || !isset($oxidepress_styles[$handle])) {
+        wp_register_style($handle, $src, $deps, $ver, $media);
+    }
+    if (!in_array($handle, $oxidepress_style_queue, true)) {
+        $oxidepress_style_queue[] = $handle;
+    }
 }
 
 function wp_register_script($handle, $src, $deps = array(), $ver = false, $args = array())
 {
+    global $oxidepress_scripts;
+
+    $in_footer = false;
+    if (is_array($args)) {
+        $in_footer = !empty($args['in_footer']);
+    } else {
+        $in_footer = (bool)$args;
+    }
+    $oxidepress_scripts[(string)$handle] = array(
+        'src' => (string)$src,
+        'deps' => oxidepress_dep_list($deps),
+        'ver' => $ver,
+        'in_footer' => $in_footer,
+    );
     return true;
 }
 
 function wp_register_style($handle, $src, $deps = array(), $ver = false, $media = 'all')
 {
+    global $oxidepress_styles;
+
+    $media = (string)$media;
+    if ($media === '') {
+        $media = 'all';
+    }
+    $oxidepress_styles[(string)$handle] = array(
+        'src' => (string)$src,
+        'deps' => oxidepress_dep_list($deps),
+        'ver' => $ver,
+        'media' => $media,
+    );
     return true;
+}
+
+function oxidepress_print_head_assets()
+{
+    if (!did_action('wp_enqueue_scripts')) {
+        do_action('wp_enqueue_scripts');
+    }
+    oxidepress_print_styles();
+    oxidepress_print_scripts(false);
+}
+
+function oxidepress_print_footer_assets()
+{
+    if (!did_action('wp_enqueue_scripts')) {
+        do_action('wp_enqueue_scripts');
+    }
+    oxidepress_print_styles();
+    oxidepress_print_scripts(true);
+}
+
+function oxidepress_print_styles()
+{
+    global $oxidepress_style_queue;
+
+    $stack = array();
+    foreach ($oxidepress_style_queue as $handle) {
+        oxidepress_print_one_style($handle, $stack);
+    }
+}
+
+function oxidepress_print_one_style($handle, &$stack)
+{
+    global $oxidepress_styles, $oxidepress_done_styles;
+
+    if (isset($oxidepress_done_styles[$handle]) || isset($stack[$handle])) {
+        return;
+    }
+    if (!isset($oxidepress_styles[$handle])) {
+        return;
+    }
+    $stack[$handle] = true;
+    $item = $oxidepress_styles[$handle];
+    foreach ($item['deps'] as $dep) {
+        oxidepress_print_one_style($dep, $stack);
+    }
+    unset($stack[$handle]);
+    $oxidepress_done_styles[$handle] = true;
+    $src = oxidepress_asset_src($item['src'], $item['ver']);
+    if ($src === '') {
+        return;
+    }
+    echo '<link rel="stylesheet" id="' . esc_attr($handle) . '-css" href="' . esc_url($src) . '" media="' . esc_attr($item['media']) . '" />' . "\n";
+}
+
+function oxidepress_print_scripts($in_footer)
+{
+    global $oxidepress_script_queue;
+
+    $stack = array();
+    foreach ($oxidepress_script_queue as $handle) {
+        oxidepress_print_one_script($handle, $in_footer, $stack);
+    }
+}
+
+function oxidepress_print_one_script($handle, $in_footer, &$stack)
+{
+    global $oxidepress_scripts, $oxidepress_done_scripts;
+
+    if (isset($oxidepress_done_scripts[$handle]) || isset($stack[$handle])) {
+        return;
+    }
+    if (!isset($oxidepress_scripts[$handle])) {
+        return;
+    }
+    $item = $oxidepress_scripts[$handle];
+    $stack[$handle] = true;
+    foreach ($item['deps'] as $dep) {
+        oxidepress_print_one_script($dep, $in_footer, $stack);
+    }
+    unset($stack[$handle]);
+    $want_footer = !empty($item['in_footer']);
+    if ($want_footer !== $in_footer && !$in_footer) {
+        return;
+    }
+    $oxidepress_done_scripts[$handle] = true;
+    $src = oxidepress_asset_src($item['src'], $item['ver']);
+    if ($src === '') {
+        return;
+    }
+    echo '<script id="' . esc_attr($handle) . '-js" src="' . esc_url($src) . '"></script>' . "\n";
+}
+
+function oxidepress_dep_list($deps)
+{
+    if (!is_array($deps)) {
+        return array();
+    }
+    $list = array();
+    foreach ($deps as $dep) {
+        $dep = (string)$dep;
+        if ($dep !== '') {
+            $list[] = $dep;
+        }
+    }
+    return $list;
+}
+
+function oxidepress_asset_src($src, $ver)
+{
+    $src = trim((string)$src);
+    if ($src === '') {
+        return '';
+    }
+    if ($ver === false || $ver === null || $ver === '') {
+        return $src;
+    }
+    $join = strpos($src, '?') === false ? '?' : '&';
+    return $src . $join . 'ver=' . rawurlencode((string)$ver);
 }
 
 class WP_Widget

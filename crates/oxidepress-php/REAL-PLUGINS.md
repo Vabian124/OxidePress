@@ -25,7 +25,7 @@ The probe includes each plugin, attaches its registrations, then fires `plugins_
 
 ## After the boot helpers
 
-The worker now provides the path, URL, locale, translation, query-arg, transient, and widget helpers those plugins call while booting, plus `register_post_type` (returns a `WP_Post_Type`), `add_submenu_page` and the other `add_*_page` menu helpers, upload-directory helpers (`wp_upload_dir`, `wp_get_upload_dir`, `wp_mkdir_p`, `wp_is_writable`, `wp_normalize_path`), and a small nonce/`get_bloginfo` surface. `wp_enqueue_script` / `wp_enqueue_style` and `register_setting` are accepted and do not yet print assets or draw a settings screen. `current_user_can()` returns false.
+The worker now provides the path, URL, locale, translation, query-arg, transient, and widget helpers those plugins call while booting, plus `register_post_type` (returns a `WP_Post_Type`), `add_submenu_page` and the other `add_*_page` menu helpers, upload-directory helpers (`wp_upload_dir`, `wp_get_upload_dir`, `wp_mkdir_p`, `wp_is_writable`, `wp_normalize_path`), and a small nonce/`get_bloginfo` surface. `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when the script is marked for the footer. `register_setting` is accepted and does not draw a settings screen. `current_user_can()` returns false.
 
 | Plugin | Version | Result |
 | --- | --- | --- |

@@ -69,7 +69,7 @@ Yoast、ACF、Contact Form 7、Wordfence、WooCommerce が保存する行は、�
 - プラグインが `wp-content/plugins` にあるとき、`ABSPATH` は `wp-content` を含むディレクトリである。そうでなければ、`wp-load.php` がある祖先を使う。どちらも無いときは、プラグインディレクトリの親である。`wp-admin` と `wp-includes` は同梱しない。
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
 - `oxidepress-admin` は、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
-- 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
+- `wp_enqueue_style` は `wp_head` に `link` タグを出力する。`wp_enqueue_script` は `wp_head` に `script` タグを出力し、フッター指定のときは `wp_footer` に出力する。ホストがまだ `wp_enqueue_scripts` を発火していないとき、ワーカーは最初の出力の前にそれを一度だけ実行する。投稿タイプ、管理メニュー、`register_setting` はワーカーの中に留まり、設定画面は描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - プライベートアドレス、内部ホスト名、HTTP 以外のスキームは拒否する。リダイレクトは追わない。1 MiB を超える応答は拒否する。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。
