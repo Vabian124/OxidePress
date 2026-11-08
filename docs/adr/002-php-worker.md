@@ -67,7 +67,7 @@ Yoast、ACF、Contact Form 7、Wordfence、WooCommerce が保存する行は、�
 
 - プラグインが `wp-content/plugins` にあるとき、`ABSPATH` は `wp-content` を含むディレクトリである。そうでなければ、`wp-load.php` がある祖先を使う。どちらも無いときは、プラグインディレクトリの親である。`wp-admin` と `wp-includes` は同梱しない。
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
-- `POST /admin/plugins/{name}/activate` はスラッシュを含められない。そのため `oxidepress-admin` は、いまも表示名を保存する。復元はどちらの形も受け付ける。
+- `oxidepress-admin` は、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - ワーカーからの HTTP は無い。

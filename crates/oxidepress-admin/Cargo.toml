@@ -24,3 +24,6 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
+
+[dev-dependencies]
+tower = { workspace = true }

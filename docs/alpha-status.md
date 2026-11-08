@@ -8,7 +8,7 @@ The shop, product, cart, and checkout pages use the active theme, including its 
 
 Themes in this tree are Tera themes. PHP themes do not run.
 
-A dropped-in PHP plugin can boot in one `oxidepress-php` worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. `ABSPATH` is the WordPress root when the plugins directory is `wp-content/plugins` or an ancestor contains `wp-load.php`. Otherwise it is the parent of the plugins directory. Core files are not vendored. Deactivating one plugin needs a process restart. The admin activate route still stores the display name, because the path cannot contain a slash. Enqueue and admin-menu registrations stay inside the worker. HTTP from the worker is absent. `current_user_can()`, `is_admin()`, and `is_multisite()` are false. Activation callbacks are not run on load.
+A dropped-in PHP plugin can boot in one `oxidepress-php` worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. `ABSPATH` is the WordPress root when the plugins directory is `wp-content/plugins` or an ancestor contains `wp-load.php`. Otherwise it is the parent of the plugins directory. Core files are not vendored. Deactivating one plugin needs a process restart. The admin activate route stores the WordPress basename, including one that contains a slash. Enqueue and admin-menu registrations stay inside the worker. HTTP from the worker is absent. `current_user_can()`, `is_admin()`, and `is_multisite()` are false. Activation callbacks are not run on load.
 
 The names Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce in the admin are OxidePress screens (`oxidepress-seo`, `oxidepress-fields`, `oxidepress-forms`, `oxidepress-security`, `oxidepress-commerce`) that read and write the same kinds of rows. They are not a claim that the WordPress.org plugins are fully reimplemented.
 
@@ -20,6 +20,6 @@ The names Yoast, ACF, Contact Form 7, Wordfence, and WooCommerce in the admin ar
 | Custom Fields | A field group for `post`, `page`, `product`, or `all` is stored and saves as post meta. | The matching editor shows the group, including a product location on the product editor. |
 | Contact Forms | A form is a `wpcf7_contact_form` post. | `[contact-form-7 id="…"]` renders the stored form. The built-in shortcodes caption, audio, video, gallery, and embed still render too. |
 | Security | An address stays in `wf_blocked_ips`. Firewall, rate-limit, and login settings are stored. `127.0.0.1` and `::1` cannot be added. | A stored address is refused on the next request. `wf_firewall_enabled=0` skips the firewall scan and still refuses stored addresses. The rate-limit and login options control the next attempt. |
-| Plugins | Activating a plugin writes `active_plugins`. The next boot marks discovered plugins active. | The admin route stores the display name. Restore accepts the display name or the WordPress basename. |
+| Plugins | Activating a plugin writes `active_plugins` as the WordPress basename when the plugin has one. The next boot marks discovered plugins active. | Restore accepts the display name or the basename. |
 
 The four admin screens render with the shared admin context. A single custom-field label is accepted, and the saved location is shown on the list.

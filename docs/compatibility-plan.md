@@ -49,18 +49,18 @@ Each code item names one crate. A docs item says `docs`. Finish that item before
 
 `ABSPATH` follows the install layout. Plugins in `wp-content/plugins` use the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored, so a missing `version.php` or `wp-admin/includes/file.php` still fails the same way.
 
-These are still true in `oxidepress-php` and `oxidepress-admin`:
+Activating or deactivating a plugin writes `active_plugins` as the WordPress basename when the plugin has one, including a basename that contains a slash (`hello-dolly/hello.php`). A plugin without a basename still stores its display name. Restore accepts either form.
 
-- `POST /admin/plugins/{name}/activate` cannot contain a slash, so the route stores the display name. Restore accepts the display name or the basename.
+These are still true:
+
 - `wp_enqueue_script`, `wp_enqueue_style`, `register_setting`, post types, and admin menus stay inside the worker. They do not print assets or draw a settings screen.
 - HTTP from the worker is absent.
 - Deactivating one plugin needs a process restart. `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
 
 ## Next, in order
 
-1. Teach the admin activate route to store a basename that contains a slash. `oxidepress-admin`.
-2. `wp_enqueue_script`, `wp_enqueue_style`, and admin-menu registrations stay inside the worker. A later server screen for them would be `oxidepress-server`.
-3. HTTP from the worker, including the class of call Akismet's spam API needs. `oxidepress-php`. Do not start this by stubbing Contact Form 7's `require_once` of `wp-admin/includes/file.php`.
+1. `wp_enqueue_script`, `wp_enqueue_style`, and admin-menu registrations stay inside the worker. A later server screen for them would be `oxidepress-server`.
+2. HTTP from the worker, including the class of call Akismet's spam API needs. `oxidepress-php`. Do not start this by stubbing Contact Form 7's `require_once` of `wp-admin/includes/file.php`.
 
 ## Not this plan
 

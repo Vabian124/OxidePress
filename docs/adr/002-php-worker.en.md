@@ -67,7 +67,7 @@ What it does not do:
 
 - When plugins live in `wp-content/plugins`, `ABSPATH` is the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored.
 - Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
-- `POST /admin/plugins/{name}/activate` cannot contain a slash, so `oxidepress-admin` still stores the display name. Restore accepts either form.
+- `oxidepress-admin` stores the WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
 - `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
 - HTTP from the worker is absent.
