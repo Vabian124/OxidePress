@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to run WordPress plugins and set ABSPATH from the install layout.
+// Modified by Vabian124 on 2026-11-08 to let the PHP worker make public HTTP requests.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -27,6 +27,14 @@ pub trait PhpHost: Send + Sync {
     fn get_option(&self, name: &str) -> Option<String>;
     fn update_option(&self, name: &str, value: &str) -> bool;
     fn delete_option(&self, name: &str) -> bool;
+
+    /// Perform one public HTTP request. The default refuses private addresses.
+    fn http_request(
+        &self,
+        request: &crate::http::HttpRequest,
+    ) -> Result<crate::http::HttpResponse, String> {
+        crate::http::perform(request)
+    }
 }
 
 /// One hook, shortcode, or lifecycle callback returned by a plugin load.
@@ -580,6 +588,7 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             Value::Bool(host.update_option(&name, &value))
         }
         Some("delete_option") => Value::Bool(host.delete_option(&name)),
+        Some("http") => crate::http::dispatch(host, frame),
         _ => Value::Null,
     }
 }
@@ -611,12 +620,14 @@ mod tests {
 
     struct MemHost {
         options: Mutex<HashMap<String, String>>,
+        http: Mutex<Vec<crate::http::HttpRequest>>,
     }
 
     impl MemHost {
         fn new() -> Self {
             Self {
                 options: Mutex::new(HashMap::new()),
+                http: Mutex::new(Vec::new()),
             }
         }
 
@@ -643,6 +654,18 @@ mod tests {
 
         fn delete_option(&self, name: &str) -> bool {
             self.options.lock().unwrap().remove(name).is_some()
+        }
+
+        fn http_request(
+            &self,
+            request: &crate::http::HttpRequest,
+        ) -> Result<crate::http::HttpResponse, String> {
+            self.http.lock().unwrap().push(request.clone());
+            Ok(crate::http::HttpResponse {
+                status: 200,
+                reason: "OK".to_string(),
+                body: "akismet-ok".to_string(),
+            })
         }
     }
 
@@ -873,10 +896,51 @@ mod tests {
         let found = discover(&fixtures()).unwrap();
         let plugin = found
             .iter()
-            .find(|plugin| plugin.name == "Needs Remote")
+            .find(|plugin| plugin.name == "Missing Call")
             .unwrap();
         let err = runtime.load(plugin).unwrap_err();
-        assert!(err.to_string().contains("wp_remote_get"), "{err}");
+        assert!(err.to_string().contains("wp_mail"), "{err}");
+    }
+
+    #[test]
+    fn php_remote_post_reaches_the_host_and_private_urls_do_not() {
+        if !php_bin_works() {
+            eprintln!("skipping php integration test: php is not on PATH");
+            return;
+        }
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&fixtures()), None, host.clone()).unwrap();
+        let found = discover(&fixtures()).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "Needs Remote")
+            .unwrap();
+        let loaded = runtime.load(plugin).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        runtime.attach(&hooks, &shortcodes, &loaded);
+        hooks.do_action("init", &json!({}));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+
+        let blocked = host.get_option("remote_blocked").unwrap();
+        assert!(blocked.contains("private"), "{blocked}");
+        assert_eq!(host.get_option("remote_code").as_deref(), Some("200"));
+        assert_eq!(
+            host.get_option("remote_body").as_deref(),
+            Some("akismet-ok")
+        );
+        let calls = host.http.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].method, "POST");
+        assert_eq!(calls[0].url, "https://example.com/1.1/comment-check");
+        assert_eq!(calls[0].body, "blog=example");
+        assert!(calls[0]
+            .headers
+            .iter()
+            .any(|(name, value)| name == "Content-Type"
+                && value == "application/x-www-form-urlencoded"));
     }
 
     #[test]

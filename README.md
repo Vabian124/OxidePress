@@ -36,7 +36,7 @@ The probe on 2026-11-07 (PHP 8.3.36) is [crates/oxidepress-php/REAL-PLUGINS.md](
 - Activating a plugin stores its WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
 - `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
-- HTTP from the worker is absent. Akismet cannot call its spam API from this process.
+- `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS. Private addresses, internal hostnames, and other schemes are refused. Redirects are not followed.
 - Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 
 Multisite, WooCommerce lookup tables, variations, coupons, shipping, tax, payment gateways, Elementor, and Jetpack are outside the current plan.

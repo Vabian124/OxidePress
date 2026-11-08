@@ -62,6 +62,7 @@ What the worker does:
 - Registers plugins under the WordPress basename (`hello-dolly/hello.php`). Activation also accepts the display name.
 - Attaches hooks and shortcodes to `oxidepress-core`.
 - Appends `wp_head` and `wp_footer` echo to the theme HTML.
+- `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS.
 
 What it does not do:
 
@@ -70,7 +71,7 @@ What it does not do:
 - `oxidepress-admin` stores the WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - Post types and admin menus stay inside the worker. `wp_enqueue_script`, `wp_enqueue_style`, and `register_setting` are accepted and do not print assets or draw a settings screen.
 - `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
-- HTTP from the worker is absent.
+- Private addresses, internal hostnames, and non-HTTP schemes are refused. Redirects are not followed. A response larger than 1 MiB is refused.
 - Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 
 Requests for a `.php` file are still blocked by server middleware. The worker is a separate process the server starts. It is not a request uploading a `.php` file into the web root.

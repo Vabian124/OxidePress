@@ -130,6 +130,7 @@ mod tests {
             vec![
                 "Boot Surface",
                 "Hello Dropin",
+                "Missing Call",
                 "Needs Remote",
                 "Sample Notice"
             ]

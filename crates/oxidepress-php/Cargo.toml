@@ -1,4 +1,4 @@
-# Modified by Vabian124 on 2026-11-07 to run WordPress plugins in a PHP worker.
+# Modified by Vabian124 on 2026-11-08 to let the PHP worker make public HTTP requests.
 # Original work: RustPress by Ryuji Yasukochi.
 # Licensed under the GNU General Public License, version 2.
 [package]
@@ -12,3 +12,5 @@ description = "Run dropped-in WordPress plugins in a long-lived PHP worker"
 [dependencies]
 oxidepress-core = { workspace = true }
 serde_json = { workspace = true }
+ureq = { version = "2.12.1", default-features = false, features = ["native-tls"] }
+url = "2"

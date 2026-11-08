@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-07 to host WordPress plugins and set ABSPATH from the install layout.
+// Modified by Vabian124 on 2026-11-08 to let plugins call wp_remote_get and wp_remote_post.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -1042,6 +1042,120 @@ class WP_Error
 function is_wp_error($thing)
 {
     return $thing instanceof WP_Error;
+}
+
+function wp_remote_get($url, $args = array())
+{
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $args['method'] = 'GET';
+    return oxidepress_remote($url, $args);
+}
+
+function wp_remote_post($url, $args = array())
+{
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $args['method'] = 'POST';
+    return oxidepress_remote($url, $args);
+}
+
+function wp_remote_request($url, $args = array())
+{
+    return oxidepress_remote($url, $args);
+}
+
+function wp_safe_remote_get($url, $args = array())
+{
+    return wp_remote_get($url, $args);
+}
+
+function wp_safe_remote_post($url, $args = array())
+{
+    return wp_remote_post($url, $args);
+}
+
+function wp_remote_retrieve_body($response)
+{
+    if (is_wp_error($response) || !is_array($response)) {
+        return '';
+    }
+    return isset($response['body']) ? (string)$response['body'] : '';
+}
+
+function wp_remote_retrieve_response_code($response)
+{
+    if (is_wp_error($response) || !is_array($response)) {
+        return '';
+    }
+    return isset($response['response']['code']) ? (int)$response['response']['code'] : '';
+}
+
+function wp_remote_retrieve_response_message($response)
+{
+    if (is_wp_error($response) || !is_array($response)) {
+        return '';
+    }
+    return isset($response['response']['message']) ? (string)$response['response']['message'] : '';
+}
+
+function oxidepress_remote($url, $args)
+{
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $method = isset($args['method']) ? strtoupper((string)$args['method']) : 'GET';
+    $headers = array();
+    if (isset($args['headers']) && is_array($args['headers'])) {
+        foreach ($args['headers'] as $name => $value) {
+            if (is_int($name)) {
+                continue;
+            }
+            $headers[(string)$name] = oxidepress_text($value);
+        }
+    }
+    $body = '';
+    if (isset($args['body'])) {
+        if (is_array($args['body'])) {
+            $body = http_build_query($args['body']);
+        } else {
+            $body = oxidepress_text($args['body']);
+        }
+    }
+    $timeout = isset($args['timeout']) ? (int)$args['timeout'] : 5;
+    if ($timeout < 1) {
+        $timeout = 1;
+    }
+    if ($timeout > 15) {
+        $timeout = 15;
+    }
+    $result = oxidepress_call('http', array(
+        'method' => $method,
+        'url' => (string)$url,
+        'headers' => $headers,
+        'body' => $body,
+        'timeout' => $timeout,
+    ));
+    if (!is_array($result)) {
+        return new WP_Error('http_request_failed', 'http host returned no result');
+    }
+    if (isset($result['error']) && $result['error'] !== null && $result['error'] !== '') {
+        return new WP_Error('http_request_failed', (string)$result['error']);
+    }
+    $code = isset($result['status']) ? (int)$result['status'] : 0;
+    $message = isset($result['reason']) ? (string)$result['reason'] : '';
+    return array(
+        'headers' => array(),
+        'body' => isset($result['body']) ? (string)$result['body'] : '',
+        'response' => array(
+            'code' => $code,
+            'message' => $message,
+        ),
+        'cookies' => array(),
+        'filename' => null,
+    );
 }
 
 function sanitize_text_field($text)

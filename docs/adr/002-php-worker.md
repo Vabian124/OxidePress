@@ -62,6 +62,7 @@ Yoast、ACF、Contact Form 7、Wordfence、WooCommerce が保存する行は、�
 - プラグインを WordPress の basename（`hello-dolly/hello.php`）で登録する。有効化は表示名でも受け付ける。
 - フックとショートコードを `oxidepress-core` に付ける。
 - `wp_head` と `wp_footer` の echo をテーマの HTML に追記する。
+- `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。
 
 ワーカーがしないこと:
 
@@ -70,7 +71,7 @@ Yoast、ACF、Contact Form 7、Wordfence、WooCommerce が保存する行は、�
 - `oxidepress-admin` は、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
-- ワーカーからの HTTP は無い。
+- プライベートアドレス、内部ホスト名、HTTP 以外のスキームは拒否する。リダイレクトは追わない。1 MiB を超える応答は拒否する。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。
 
 `.php` ファイルへのリクエストは、サーバーのミドルウェアがいまも拒否する。ワーカーは、サーバーが起動する別プロセスである。ウェブルートへ `.php` をアップロードするリクエストではない。

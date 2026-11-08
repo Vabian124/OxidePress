@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to run WordPress plugins in a PHP worker.
+// Modified by Vabian124 on 2026-11-08 to let the PHP worker make public HTTP requests.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Run dropped-in WordPress plugins in one long-lived PHP process.
@@ -9,6 +9,7 @@
 
 mod discover;
 mod error;
+mod http;
 mod protocol;
 mod worker;
 

@@ -36,7 +36,7 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 - プラグインを有効化すると、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - 投稿タイプと管理メニューはワーカーの中に留まる。`wp_enqueue_script`、`wp_enqueue_style`、`register_setting` は受け付けるが、アセットを出力せず、設定画面も描かない。
 - `current_user_can()` は false。`is_admin()` と `is_multisite()` は false。有効化コールバックは読み込み時には走らない。
-- ワーカーからの HTTP は無い。Akismet はこのプロセスからスパム API を呼べない。
+- `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。プライベートアドレス、内部ホスト名、それ以外のスキームは拒否する。リダイレクトは追わない。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。
 
 マルチサイト、WooCommerce のルックアップテーブル、バリエーション、クーポン、配送、税、決済ゲートウェイ、Elementor、Jetpack は、今の計画の外である。
