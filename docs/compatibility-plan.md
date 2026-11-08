@@ -53,14 +53,14 @@ Activating or deactivating a plugin writes `active_plugins` as the WordPress bas
 
 These are still true:
 
-- `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when marked for the footer. `register_setting`, post types, and admin menus stay inside the worker and do not draw a settings screen.
-- Deactivating one plugin needs a process restart. `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
+- `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when marked for the footer. An administrator opens a plugin settings page at `/wp-admin/admin.php?page={slug}`. Registered options save at `/wp-admin/options.php`. `siteurl`, `active_plugins`, role options, salts, and `rustpress_*` keys are refused. Post types do not get a list screen.
+- Deactivating one plugin needs a process restart. `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. Activation callbacks are not run on load.
 
 `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS. Private addresses, internal hostnames, and other schemes are refused before a socket opens. Redirects are not followed. A response body larger than 1 MiB is refused. This is the class of call Akismet's spam API makes. It does not vendor `wp-admin/includes/file.php`.
 
 ## Next, in order
 
-1. Admin-menu registrations stay inside the worker. A later server screen for them would be `oxidepress-server`. `register_setting` still does not draw a settings screen.
+The numbered items in this plan are done. What remains is listed under the worker limits above.
 
 ## Not this plan
 

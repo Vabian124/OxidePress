@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-08 to print enqueued scripts and styles.
+// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -54,6 +54,23 @@ pub enum RegistrationKind {
     Shortcode,
     Activation,
     Deactivation,
+}
+
+/// One plugin page registered with `add_menu_page` or `add_options_page`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdminPage {
+    pub slug: String,
+    pub parent: String,
+    pub page_title: String,
+    pub menu_title: String,
+}
+
+/// HTML a plugin printed for one settings page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderedAdminPage {
+    pub page_title: String,
+    pub menu_title: String,
+    pub html: String,
 }
 
 /// A plugin file that has been included in the worker.
@@ -227,6 +244,98 @@ impl PhpRuntime {
     /// Run `register_deactivation_hook` callbacks for one loaded plugin.
     pub fn run_deactivation(&self, loaded: &LoadedPlugin) -> Result<(), PhpError> {
         self.run_lifecycle(loaded, RegistrationKind::Deactivation, "deactivate")
+    }
+
+    /// Menu pages plugins registered, after `admin_menu` has run once.
+    pub fn admin_pages(&self) -> Result<Vec<AdminPage>, PhpError> {
+        let frame = self.roundtrip(json!({ "op": "admin_menus" }))?;
+        ensure_ok(&frame)?;
+        let Some(pages) = frame.get("pages").and_then(Value::as_array) else {
+            return Ok(Vec::new());
+        };
+        let mut listed = Vec::new();
+        for page in pages {
+            let slug = page.get("slug").and_then(Value::as_str).unwrap_or("");
+            if !worker_token(slug, 80) {
+                continue;
+            }
+            listed.push(AdminPage {
+                slug: slug.to_string(),
+                parent: json_text(page.get("parent")),
+                page_title: json_text(page.get("page_title")),
+                menu_title: json_text(page.get("menu_title")),
+            });
+        }
+        Ok(listed)
+    }
+
+    /// Render one plugin settings page. `nonce` is printed by `settings_fields`.
+    pub fn render_admin_page(
+        &self,
+        slug: &str,
+        nonce: &str,
+    ) -> Result<RenderedAdminPage, PhpError> {
+        if !worker_token(slug, 80) {
+            return Err(PhpError::Worker("unknown page".to_string()));
+        }
+        let nonce = if worker_token(nonce, 128) { nonce } else { "" };
+        let frame = self.roundtrip(json!({
+            "op": "admin_page",
+            "slug": slug,
+            "nonce": nonce,
+        }))?;
+        ensure_ok(&frame)?;
+        Ok(RenderedAdminPage {
+            page_title: json_text(frame.get("page_title")),
+            menu_title: json_text(frame.get("menu_title")),
+            html: json_text(frame.get("html")),
+        })
+    }
+
+    /// Store posted values whose names were `register_setting`'d for `group`.
+    ///
+    /// Protected option names, other groups, and unregistered keys are ignored.
+    pub fn save_admin_settings(
+        &self,
+        group: &str,
+        values: &HashMap<String, String>,
+    ) -> Result<Vec<String>, PhpError> {
+        if !worker_token(group, 80) {
+            return Err(PhpError::Worker("unknown settings group".to_string()));
+        }
+        let mut clean = serde_json::Map::new();
+        for (name, value) in values {
+            if clean.len() >= 40 {
+                break;
+            }
+            if !worker_token(name, 191) {
+                continue;
+            }
+            let mut stored = value.replace('\0', "");
+            if stored.len() > 10_000 {
+                stored.truncate(10_000);
+            }
+            clean.insert(name.clone(), Value::String(stored));
+        }
+        let frame = self.roundtrip(json!({
+            "op": "admin_save",
+            "group": group,
+            "values": clean,
+        }))?;
+        ensure_ok(&frame)?;
+        let saved = frame
+            .get("saved")
+            .and_then(Value::as_array)
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .filter(|name| worker_token(name, 191))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+        Ok(saved)
     }
 
     /// Take echoed output captured while `tag` ran, and clear it.
@@ -514,6 +623,18 @@ fn php_program() -> PathBuf {
     std::env::var_os("OXIDEPRESS_PHP")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("php"))
+}
+
+/// ASCII token used for plugin page slugs, setting groups, and option names.
+pub fn worker_token(value: &str, max: usize) -> bool {
+    (1..=max).contains(&value.len())
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
+}
+
+fn json_text(value: Option<&Value>) -> String {
+    value.and_then(Value::as_str).unwrap_or("").to_string()
 }
 
 fn ensure_ok(frame: &Value) -> Result<(), PhpError> {
@@ -1056,6 +1177,124 @@ add_action('wp_enqueue_scripts', function () {
         );
         assert!(!footer.contains("base.js"), "{footer}");
         assert!(!footer.contains("app.css"), "{footer}");
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_settings_page_renders_and_saves_only_registered_options() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-settings-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("settings-page");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("settings-page.php"),
+            r#"<?php
+/**
+ * Plugin Name: Settings Page
+ */
+add_action('admin_menu', function () {
+    if (!is_admin() || !current_user_can('manage_options')) {
+        return;
+    }
+    add_options_page('Queue Settings', 'Queue', 'manage_options', 'queue-settings', 'queue_settings_page');
+    register_setting('queue_group', 'queue_label', array(
+        'type' => 'string',
+        'sanitize_callback' => 'queue_clean',
+    ));
+    register_setting('queue_group', 'siteurl');
+    add_settings_section('queue_main', 'Queue', function () {
+        echo '<p>How the queue is labeled.</p>';
+    }, 'queue-settings');
+    add_settings_field('queue_label', 'Label', function () {
+        echo '<input type="text" name="queue_label" value="' . esc_attr(get_option('queue_label', '')) . '" />';
+    }, 'queue-settings', 'queue_main');
+});
+add_action('init', function () {
+    update_option('settings_is_admin', is_admin() ? 'yes' : 'no');
+});
+function queue_settings_page() {
+    echo '<form method="post" action="options.php">';
+    settings_fields('queue_group');
+    do_settings_sections('queue-settings');
+    submit_button('Save Queue');
+    echo '</form>';
+}
+function queue_clean($value) {
+    return 'clean-' . $value;
+}
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "Settings Page")
+            .unwrap();
+        let loaded = runtime.load(plugin).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        runtime.attach(&hooks, &shortcodes, &loaded);
+
+        let pages = runtime.admin_pages().unwrap();
+        assert_eq!(pages.len(), 1, "{pages:?}");
+        assert_eq!(pages[0].slug, "queue-settings");
+        assert_eq!(pages[0].menu_title, "Queue");
+
+        let rendered = runtime
+            .render_admin_page("queue-settings", "abc123nonce")
+            .unwrap();
+        assert_eq!(rendered.page_title, "Queue Settings");
+        assert!(
+            rendered.html.contains("How the queue is labeled."),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered.html.contains("name=\"queue_label\""),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered.html.contains("action=\"/wp-admin/options.php\""),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            rendered.html.contains("value=\"abc123nonce\""),
+            "{}",
+            rendered.html
+        );
+        assert!(
+            !rendered.html.contains("action=\"options.php\""),
+            "{}",
+            rendered.html
+        );
+
+        let mut posted = HashMap::new();
+        posted.insert("queue_label".to_string(), "Hello<script>".to_string());
+        posted.insert("siteurl".to_string(), "http://evil.example".to_string());
+        posted.insert("users_can_register".to_string(), "1".to_string());
+        posted.insert("option_page".to_string(), "queue_group".to_string());
+        let saved = runtime.save_admin_settings("queue_group", &posted).unwrap();
+        assert_eq!(saved, vec!["queue_label".to_string()]);
+        assert_eq!(
+            host.get_option("queue_label").as_deref(),
+            Some("clean-Hello")
+        );
+        assert!(host.get_option("siteurl").is_none());
+        assert!(host.get_option("users_can_register").is_none());
+
+        hooks.do_action("init", &json!({}));
+        assert_eq!(host.get_option("settings_is_admin").as_deref(), Some("no"));
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);

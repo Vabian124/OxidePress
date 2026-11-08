@@ -1,0 +1,26 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+<h1>{{ page_title }}</h1>
+
+{% if saved %}
+<div class="notice notice-success"><p>Settings saved.</p></div>
+{% endif %}
+{% if save_error %}
+<div class="notice notice-error"><p>Settings were not saved.</p></div>
+{% endif %}
+
+{% if page_html %}
+{{ page_html | safe }}
+{% elif php_admin_pages is defined and php_admin_pages %}
+<ul>
+    {% for page in php_admin_pages %}
+    <li><a href="/wp-admin/admin.php?page={{ page.slug }}">{{ page.menu_title }}</a></li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No plugin settings pages are registered.</p>
+{% endif %}
+{% endblock %}

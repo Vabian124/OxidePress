@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-08 to print enqueued scripts and styles.
+// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -30,6 +30,13 @@ $oxidepress_fatal_sent = false;
 $oxidepress_did = array();
 $oxidepress_post_types = array();
 $oxidepress_admin_menus = array();
+$oxidepress_registered_settings = array();
+$oxidepress_settings_sections = array();
+$oxidepress_settings_fields = array();
+$oxidepress_admin_depth = 0;
+$oxidepress_admin_ready = false;
+$oxidepress_rendering_page = '';
+$oxidepress_settings_nonce = '';
 $oxidepress_scripts = array();
 $oxidepress_styles = array();
 $oxidepress_script_queue = array();
@@ -115,6 +122,28 @@ while (true) {
             ));
         } elseif ($op === 'invoke') {
             oxidepress_invoke($frame);
+        } elseif ($op === 'admin_menus') {
+            $pages = oxidepress_admin_page_list();
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => true,
+                'pages' => $pages,
+            ));
+        } elseif ($op === 'admin_page') {
+            $slug = isset($frame['slug']) ? (string)$frame['slug'] : '';
+            $nonce = isset($frame['nonce']) ? (string)$frame['nonce'] : '';
+            $rendered = oxidepress_render_admin_page($slug, $nonce);
+            $rendered['id'] = $oxidepress_request_id;
+            oxidepress_write_frame($rendered);
+        } elseif ($op === 'admin_save') {
+            $group = isset($frame['group']) ? (string)$frame['group'] : '';
+            $values = isset($frame['values']) && is_array($frame['values']) ? $frame['values'] : array();
+            $saved = oxidepress_save_settings($group, $values);
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => true,
+                'saved' => $saved,
+            ));
         } elseif ($op === 'shutdown') {
             exit(0);
         } else {
@@ -615,7 +644,8 @@ function admin_url($path = '', $scheme = 'admin')
 
 function is_admin()
 {
-    return false;
+    global $oxidepress_admin_depth;
+    return (int)$oxidepress_admin_depth > 0;
 }
 
 function is_multisite()
@@ -818,7 +848,8 @@ function nocache_headers()
 
 function current_user_can($capability, ...$args)
 {
-    return false;
+    global $oxidepress_admin_depth;
+    return (int)$oxidepress_admin_depth > 0;
 }
 
 function wp_localize_script($handle, $object_name, $data)
@@ -988,13 +1019,21 @@ function oxidepress_add_menu($parent_slug, $page_title, $menu_title, $capability
     $parent = (string)$parent_slug;
     $slug = (string)$menu_slug;
     $hook = ($parent === '' ? 'toplevel_page_' : $parent . '_page_') . $slug;
+    $title = oxidepress_text($menu_title);
+    if ($title === '') {
+        $title = oxidepress_text($page_title);
+    }
+    if ($title === '') {
+        $title = $slug;
+    }
     $oxidepress_admin_menus[] = array(
         'parent' => $parent,
         'slug' => $slug,
         'hook' => $hook,
-        'page_title' => oxidepress_text($page_title),
-        'menu_title' => oxidepress_text($menu_title),
+        'page_title' => oxidepress_text($page_title) === '' ? $title : oxidepress_text($page_title),
+        'menu_title' => $title,
         'capability' => (string)$capability,
+        'callback_id' => oxidepress_keep_callback($callback),
     );
     return $hook;
 }
@@ -1242,14 +1281,419 @@ function load_plugin_textdomain($domain, $deprecated = false, $plugin_rel_path =
 
 function register_setting($option_group, $option_name, $args = array())
 {
+    global $oxidepress_registered_settings;
+
+    $option_name = (string)$option_name;
+    $option_group = (string)$option_group;
+    if (!oxidepress_token($option_name, 191) || !oxidepress_token($option_group, 80)) {
+        return false;
+    }
+    if (oxidepress_option_is_protected($option_name)) {
+        return false;
+    }
+    $type = 'string';
+    $sanitize_id = null;
+    if (is_callable($args)) {
+        $sanitize_id = oxidepress_keep_callback($args);
+    } elseif (is_array($args)) {
+        if (isset($args['type'])) {
+            $candidate = (string)$args['type'];
+            if ($candidate === 'boolean' || $candidate === 'integer' || $candidate === 'number' || $candidate === 'string') {
+                $type = $candidate;
+            }
+        }
+        if (isset($args['sanitize_callback']) && is_callable($args['sanitize_callback'])) {
+            $sanitize_id = oxidepress_keep_callback($args['sanitize_callback']);
+        }
+    }
+    $oxidepress_registered_settings[$option_name] = array(
+        'group' => $option_group,
+        'type' => $type,
+        'sanitize_id' => $sanitize_id,
+    );
+    return true;
 }
 
 function add_settings_section($id, $title, $callback, $page)
 {
+    global $oxidepress_settings_sections;
+
+    $page = (string)$page;
+    if ($page === '') {
+        return;
+    }
+    if (!isset($oxidepress_settings_sections[$page])) {
+        $oxidepress_settings_sections[$page] = array();
+    }
+    $oxidepress_settings_sections[$page][] = array(
+        'id' => (string)$id,
+        'title' => oxidepress_text($title),
+        'callback_id' => oxidepress_keep_callback($callback),
+    );
 }
 
 function add_settings_field($id, $title, $callback, $page, $section = 'default', $args = array())
 {
+    global $oxidepress_settings_fields;
+
+    $page = (string)$page;
+    if ($page === '') {
+        return;
+    }
+    if (!isset($oxidepress_settings_fields[$page])) {
+        $oxidepress_settings_fields[$page] = array();
+    }
+    $oxidepress_settings_fields[$page][] = array(
+        'id' => (string)$id,
+        'title' => oxidepress_text($title),
+        'section' => (string)$section,
+        'callback_id' => oxidepress_keep_callback($callback),
+    );
+}
+
+function settings_fields($option_group)
+{
+    global $oxidepress_rendering_page, $oxidepress_settings_nonce;
+
+    echo '<input type="hidden" name="option_page" value="' . esc_attr($option_group) . '" />';
+    echo '<input type="hidden" name="action" value="update" />';
+    if ($oxidepress_rendering_page !== '') {
+        echo '<input type="hidden" name="oxidepress_page" value="' . esc_attr($oxidepress_rendering_page) . '" />';
+    }
+    if ($oxidepress_settings_nonce !== '') {
+        echo '<input type="hidden" id="_wpnonce" name="_wpnonce" value="' . esc_attr($oxidepress_settings_nonce) . '" />';
+    }
+}
+
+function do_settings_sections($page)
+{
+    global $oxidepress_settings_sections, $oxidepress_settings_fields, $oxidepress_callbacks;
+
+    $page = (string)$page;
+    $sections = isset($oxidepress_settings_sections[$page]) ? $oxidepress_settings_sections[$page] : array();
+    if (!$sections) {
+        $sections = array(array('id' => 'default', 'title' => '', 'callback_id' => null));
+    }
+    foreach ($sections as $section) {
+        if ($section['title'] !== '') {
+            echo '<h2>' . esc_html($section['title']) . '</h2>';
+        }
+        if ($section['callback_id'] !== null && isset($oxidepress_callbacks[$section['callback_id']])) {
+            call_user_func($oxidepress_callbacks[$section['callback_id']]);
+        }
+        echo '<table class="form-table"><tbody>';
+        $fields = isset($oxidepress_settings_fields[$page]) ? $oxidepress_settings_fields[$page] : array();
+        foreach ($fields as $field) {
+            if ((string)$field['section'] !== (string)$section['id']) {
+                continue;
+            }
+            echo '<tr><th scope="row">' . esc_html($field['title']) . '</th><td>';
+            if ($field['callback_id'] !== null && isset($oxidepress_callbacks[$field['callback_id']])) {
+                call_user_func($oxidepress_callbacks[$field['callback_id']]);
+            }
+            echo '</td></tr>';
+        }
+        echo '</tbody></table>';
+    }
+}
+
+function submit_button($text = '', $type = 'primary', $name = 'submit', $wrap = true, $other_attributes = '')
+{
+    if ($text === '' || $text === null) {
+        $text = 'Save Changes';
+    }
+    echo '<p class="submit"><button type="submit" name="' . esc_attr($name) . '" class="button button-primary">' . esc_html(oxidepress_text($text)) . '</button></p>';
+}
+
+function checked($checked, $current = true, $display = true)
+{
+    $result = ((string)$checked === (string)$current) ? ' checked="checked"' : '';
+    if ($display) {
+        echo $result;
+    }
+    return $result;
+}
+
+function selected($selected, $current = true, $display = true)
+{
+    $result = ((string)$selected === (string)$current) ? ' selected="selected"' : '';
+    if ($display) {
+        echo $result;
+    }
+    return $result;
+}
+
+function oxidepress_keep_callback($callback)
+{
+    global $oxidepress_callbacks;
+
+    if (!is_callable($callback)) {
+        return null;
+    }
+    $id = count($oxidepress_callbacks);
+    $oxidepress_callbacks[] = $callback;
+    return $id;
+}
+
+function oxidepress_token($value, $max)
+{
+    $value = (string)$value;
+    $length = strlen($value);
+    if ($length < 1 || $length > $max) {
+        return false;
+    }
+    return preg_match('/^[A-Za-z0-9_-]+$/', $value) === 1;
+}
+
+function oxidepress_option_is_protected($name)
+{
+    $blocked = array(
+        'siteurl',
+        'home',
+        'active_plugins',
+        'template',
+        'stylesheet',
+        'wp_user_roles',
+        'cron',
+        'rewrite_rules',
+        'uninstall_plugins',
+        'users_can_register',
+        'default_role',
+        'admin_email',
+        'auth_key',
+        'secure_auth_key',
+        'logged_in_key',
+        'nonce_key',
+        'auth_salt',
+        'secure_auth_salt',
+        'logged_in_salt',
+        'nonce_salt',
+    );
+    if (in_array($name, $blocked, true)) {
+        return true;
+    }
+    if (strpos($name, '_rustpress_') === 0 || strpos($name, 'rustpress_') === 0) {
+        return true;
+    }
+    return false;
+}
+
+function oxidepress_enter_admin_screen()
+{
+    global $oxidepress_admin_depth, $oxidepress_admin_ready;
+
+    $oxidepress_admin_depth = (int)$oxidepress_admin_depth + 1;
+    if ($oxidepress_admin_ready) {
+        return;
+    }
+    $oxidepress_admin_ready = true;
+    if (!did_action('admin_menu')) {
+        do_action('admin_menu');
+    }
+}
+
+function oxidepress_leave_admin_screen()
+{
+    global $oxidepress_admin_depth;
+    $oxidepress_admin_depth = max(0, (int)$oxidepress_admin_depth - 1);
+}
+
+function oxidepress_admin_page_list()
+{
+    global $oxidepress_admin_menus;
+
+    oxidepress_enter_admin_screen();
+    try {
+        $pages = array();
+        foreach ($oxidepress_admin_menus as $menu) {
+            if (!oxidepress_token($menu['slug'], 80)) {
+                continue;
+            }
+            $pages[] = array(
+                'slug' => $menu['slug'],
+                'parent' => $menu['parent'],
+                'page_title' => $menu['page_title'],
+                'menu_title' => $menu['menu_title'],
+            );
+            if (count($pages) >= 40) {
+                break;
+            }
+        }
+        return $pages;
+    } finally {
+        oxidepress_leave_admin_screen();
+    }
+}
+
+function oxidepress_render_admin_page($slug, $nonce)
+{
+    global $oxidepress_admin_menus, $oxidepress_callbacks, $oxidepress_rendering_page, $oxidepress_settings_nonce;
+
+    if (!oxidepress_token($slug, 80)) {
+        return array('ok' => false, 'error' => 'unknown page');
+    }
+    if (!preg_match('/^[A-Za-z0-9]{0,128}$/', (string)$nonce)) {
+        $nonce = '';
+    }
+    oxidepress_enter_admin_screen();
+    try {
+        $page = null;
+        foreach ($oxidepress_admin_menus as $menu) {
+            if ($menu['slug'] === $slug) {
+                $page = $menu;
+                break;
+            }
+        }
+        if ($page === null) {
+            return array('ok' => false, 'error' => 'unknown page');
+        }
+        $oxidepress_rendering_page = $slug;
+        $oxidepress_settings_nonce = (string)$nonce;
+        ob_start();
+        if ($page['callback_id'] !== null && isset($oxidepress_callbacks[$page['callback_id']])) {
+            call_user_func($oxidepress_callbacks[$page['callback_id']]);
+        }
+        $html = ob_get_clean();
+        if ($html === false) {
+            $html = '';
+        }
+        if (stripos($html, '<form') === false && oxidepress_page_has_fields($slug)) {
+            ob_start();
+            oxidepress_default_settings_form($slug);
+            $extra = ob_get_clean();
+            if ($extra !== false) {
+                $html .= $extra;
+            }
+        }
+    } finally {
+        $oxidepress_rendering_page = '';
+        $oxidepress_settings_nonce = '';
+        oxidepress_leave_admin_screen();
+    }
+    $html = oxidepress_rewrite_options_form($html);
+    if (strlen($html) > 200000) {
+        $html = substr($html, 0, 200000);
+    }
+    return array(
+        'ok' => true,
+        'page_title' => $page['page_title'],
+        'menu_title' => $page['menu_title'],
+        'html' => $html,
+    );
+}
+
+function oxidepress_page_has_fields($slug)
+{
+    global $oxidepress_settings_fields;
+    return !empty($oxidepress_settings_fields[$slug]);
+}
+
+function oxidepress_default_settings_form($slug)
+{
+    $group = $slug;
+    global $oxidepress_registered_settings;
+    foreach ($oxidepress_registered_settings as $setting) {
+        if ($setting['group'] === $slug) {
+            $group = $slug;
+            break;
+        }
+    }
+    echo '<form method="post" action="/wp-admin/options.php">';
+    settings_fields($group);
+    do_settings_sections($slug);
+    submit_button();
+    echo '</form>';
+}
+
+function oxidepress_rewrite_options_form($html)
+{
+    $html = str_replace(
+        array('action="options.php"', "action='options.php'"),
+        array('action="/wp-admin/options.php"', "action='/wp-admin/options.php'"),
+        $html
+    );
+    $site = rtrim(oxidepress_env('OXIDEPRESS_SITE_URL', 'http://localhost'), '/');
+    return str_replace($site . '/wp-admin/options.php', '/wp-admin/options.php', $html);
+}
+
+function oxidepress_save_settings($group, $values)
+{
+    global $oxidepress_registered_settings, $oxidepress_callbacks;
+
+    if (!oxidepress_token($group, 80)) {
+        return array();
+    }
+    oxidepress_enter_admin_screen();
+    try {
+    $saved = array();
+    $count = 0;
+    foreach ($values as $name => $value) {
+        $name = (string)$name;
+        if (!isset($oxidepress_registered_settings[$name])) {
+            continue;
+        }
+        if ($count >= 40) {
+            break;
+        }
+        $count++;
+        $setting = $oxidepress_registered_settings[$name];
+        if ($setting['group'] !== $group || oxidepress_option_is_protected($name)) {
+            continue;
+        }
+        $clean = oxidepress_clean_setting($value, $setting, $oxidepress_callbacks);
+        if ($clean === null) {
+            continue;
+        }
+        if (update_option($name, $clean)) {
+            $saved[] = $name;
+        }
+    }
+    return $saved;
+    } finally {
+        oxidepress_leave_admin_screen();
+    }
+}
+
+function oxidepress_clean_setting($value, $setting, $callbacks)
+{
+    if (is_array($value) || is_object($value)) {
+        return null;
+    }
+    $value = str_replace("\0", '', (string)$value);
+    if (strlen($value) > 10000) {
+        $value = substr($value, 0, 10000);
+    }
+    if ($setting['sanitize_id'] !== null && isset($callbacks[$setting['sanitize_id']])) {
+        try {
+            $clean = call_user_func($callbacks[$setting['sanitize_id']], $value);
+        } catch (Throwable $error) {
+            return null;
+        }
+        if ($clean === false || $clean === null || is_array($clean) || is_object($clean)) {
+            return null;
+        }
+        $value = str_replace("\0", '', (string)$clean);
+        if (strlen($value) > 10000) {
+            $value = substr($value, 0, 10000);
+        }
+    }
+    $type = $setting['type'];
+    if ($type === 'boolean') {
+        return ($value === '1' || $value === 'on' || $value === 'true' || $value === 'yes') ? '1' : '0';
+    }
+    if ($type === 'integer') {
+        if (!preg_match('/^-?[0-9]{1,12}$/', $value)) {
+            return null;
+        }
+        return $value;
+    }
+    if ($type === 'number') {
+        if (!is_numeric($value)) {
+            return null;
+        }
+        return $value;
+    }
+    return trim(strip_tags($value));
 }
 
 function add_allowed_options($new_options, $options = '')

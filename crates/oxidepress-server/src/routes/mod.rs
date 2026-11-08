@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use axum::Router;
 use std::sync::Arc;
 use tower_http::trace::TraceLayer;
@@ -7,6 +10,7 @@ pub mod commerce;
 pub mod forms;
 pub(crate) mod frontend;
 pub mod health;
+pub mod php_pages;
 pub mod plugin_admin;
 mod posts;
 pub mod seo;

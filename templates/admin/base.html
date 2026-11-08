@@ -161,6 +161,13 @@
             <a href="/wp-admin/options-permalink.php" class="menu-item submenu-item">
                 <span>{{ __( key="Permalinks") }}</span>
             </a>
+            {% if php_admin_pages is defined %}
+            {% for page in php_admin_pages %}
+            <a href="/wp-admin/admin.php?page={{ page.slug }}" class="menu-item submenu-item {% if active_page == 'php-' ~ page.slug %}active{% endif %}">
+                <span>{{ page.menu_title }}</span>
+            </a>
+            {% endfor %}
+            {% endif %}
             {% endif %}
         </nav>
     </div>

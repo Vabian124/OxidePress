@@ -34,8 +34,8 @@ The probe on 2026-11-07 (PHP 8.3.36) is [crates/oxidepress-php/REAL-PLUGINS.md](
 - `ABSPATH` is the directory that contains `wp-content` when plugins live in `wp-content/plugins`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. It is not the plugins directory, and this tree does not vendor `wp-admin` or `wp-includes`.
 - Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
 - Activating a plugin stores its WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
-- `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when the script asks for the footer. Post types, admin menus, and `register_setting` stay inside the worker and do not draw a settings screen.
-- `current_user_can()` is false. `is_admin()` and `is_multisite()` are false. Activation callbacks are not run on load.
+- `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when the script asks for the footer. An administrator opens a plugin settings page at `/wp-admin/admin.php?page={slug}`. Options that page registered are saved at `/wp-admin/options.php`. `siteurl`, `active_plugins`, role options, salts, and `rustpress_*` keys are refused. Post types still do not get a list screen.
+- `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. Activation callbacks are not run on load.
 - `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS. Private addresses, internal hostnames, and other schemes are refused. Redirects are not followed.
 - Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 

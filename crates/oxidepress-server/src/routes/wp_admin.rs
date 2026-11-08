@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to name the post on each comment row.
+// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -280,6 +280,11 @@ pub fn routes(state: Arc<AppState>) -> Router {
             "/wp-admin/options-general.php",
             get(settings_page).post(settings_save),
         )
+        .route("/wp-admin/admin.php", get(super::php_pages::plugin_page))
+        .route(
+            "/wp-admin/options.php",
+            post(super::php_pages::plugin_options_save),
+        )
         .route("/wp-admin/nav-menus.php", get(menus_page).post(menus_save))
         .route(
             "/wp-admin/themes.php",
@@ -531,6 +536,7 @@ pub(crate) async fn admin_context(state: &AppState, session: &Session) -> tera::
         "wpnonce_manage_network",
         &state.nonces.create_nonce("manage_network", user_id),
     );
+    ctx.insert("php_admin_pages", &super::php_pages::menu_items(state));
 
     ctx
 }
