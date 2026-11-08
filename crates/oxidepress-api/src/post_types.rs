@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-09 to list plugin post types.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use axum::{extract::Path, http::StatusCode, routing::get, Json, Router};
 use serde_json::{json, Value};
 use std::collections::HashMap;
@@ -12,15 +15,59 @@ pub fn routes() -> Router<ApiState> {
 
 /// `GET /wp-json/wp/v2/types` — returns an object keyed by type slug,
 /// matching the WordPress `WP_REST_Post_Types_Controller` response format.
-async fn list_types() -> Json<HashMap<String, Value>> {
-    Json(builtin_types())
+async fn list_types(
+    axum::extract::State(state): axum::extract::State<ApiState>,
+) -> Json<HashMap<String, Value>> {
+    Json(all_types(&state))
 }
 
-async fn get_type(Path(slug): Path<String>) -> Result<Json<Value>, StatusCode> {
-    builtin_types()
+async fn get_type(
+    axum::extract::State(state): axum::extract::State<ApiState>,
+    Path(slug): Path<String>,
+) -> Result<Json<Value>, StatusCode> {
+    all_types(&state)
         .remove(&slug)
         .map(Json)
         .ok_or(StatusCode::NOT_FOUND)
+}
+
+fn all_types(state: &ApiState) -> HashMap<String, Value> {
+    let mut map = builtin_types();
+    for kind in state.post_types.get_all() {
+        if kind.builtin || !kind.args.show_ui {
+            continue;
+        }
+        let label = if kind.args.label.is_empty() {
+            kind.name.clone()
+        } else {
+            kind.args.label.clone()
+        };
+        let singular = if kind.args.labels.singular_name.is_empty() {
+            label.clone()
+        } else {
+            kind.args.labels.singular_name.clone()
+        };
+        map.insert(
+            kind.name.clone(),
+            json!({
+                "description": "",
+                "hierarchical": kind.args.hierarchical,
+                "has_archive": kind.args.has_archive,
+                "name": kind.name,
+                "slug": kind.name,
+                "taxonomies": [],
+                "rest_base": kind.name,
+                "rest_namespace": "wp/v2",
+                "viewable": kind.args.public,
+                "labels": {
+                    "name": label,
+                    "singular_name": singular,
+                    "menu_name": label,
+                },
+            }),
+        );
+    }
+    map
 }
 
 fn builtin_types() -> HashMap<String, Value> {

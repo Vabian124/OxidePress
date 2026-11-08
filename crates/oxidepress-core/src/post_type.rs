@@ -1,3 +1,6 @@
+// Modified by Vabian124 on 2026-11-09 to allow content rows for plugin post types.
+// Original work: RustPress by Ryuji Yasukochi.
+// Licensed under the GNU General Public License, version 2.
 use std::collections::BTreeMap;
 use std::sync::{Arc, RwLock};
 use tracing::debug;
@@ -260,6 +263,20 @@ impl PostTypeRegistry {
             .filter(|pt| pt.args.show_in_rest)
             .cloned()
             .collect()
+    }
+
+    /// Whether an editor or the REST API may store a row of this type.
+    ///
+    /// `post`, `page`, and `attachment` pass. Revisions and menu items do not.
+    /// A plugin type passes when it was registered with a visible admin screen.
+    pub fn allows_content(&self, name: &str) -> bool {
+        if matches!(name, "revision" | "nav_menu_item") {
+            return false;
+        }
+        let Some(kind) = self.get(name) else {
+            return false;
+        };
+        matches!(name, "post" | "page" | "attachment") || (!kind.builtin && kind.args.show_ui)
     }
 
     /// Check if a post type is registered.

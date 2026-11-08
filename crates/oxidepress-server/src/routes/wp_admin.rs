@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
+// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and custom post screens.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -537,8 +537,34 @@ pub(crate) async fn admin_context(state: &AppState, session: &Session) -> tera::
         &state.nonces.create_nonce("manage_network", user_id),
     );
     ctx.insert("php_admin_pages", &super::php_pages::menu_items(state));
+    let custom_post_types: Vec<serde_json::Value> = state
+        .post_types
+        .get_all()
+        .into_iter()
+        .filter(|kind| !kind.builtin && kind.args.show_ui && kind.args.show_in_menu)
+        .take(40)
+        .map(|kind| {
+            serde_json::json!({
+                "name": kind.name,
+                "label": if kind.args.label.is_empty() { kind.name } else { kind.args.label },
+            })
+        })
+        .collect();
+    ctx.insert("custom_post_types", &custom_post_types);
 
     ctx
+}
+
+fn custom_type_label(state: &AppState, name: &str) -> Option<String> {
+    let kind = state.post_types.get(name)?;
+    if kind.builtin || !kind.args.show_ui {
+        return None;
+    }
+    if kind.args.label.is_empty() {
+        Some(kind.name)
+    } else {
+        Some(kind.args.label)
+    }
 }
 
 // --- Login dispatch ---
@@ -1205,13 +1231,20 @@ async fn posts_list(
     let mut ctx = admin_context(&state, &session).await;
 
     let (active_page, type_label) = if post_type == "page" {
-        ("pages", "Pages")
+        ("pages".to_string(), "Pages".to_string())
+    } else if let Some(label) = custom_type_label(&state, post_type) {
+        (format!("type-{post_type}"), label)
     } else {
-        ("posts", "Posts")
+        ("posts".to_string(), "Posts".to_string())
     };
-    ctx.insert("active_page", active_page);
+    let post_type = if active_page == "posts" && post_type != "post" {
+        "post"
+    } else {
+        post_type
+    };
+    ctx.insert("active_page", &active_page);
     ctx.insert("post_type", post_type);
-    ctx.insert("type_label", type_label);
+    ctx.insert("type_label", &type_label);
 
     let page = params.page.unwrap_or(1);
     let per_page = 20u64;
@@ -1551,6 +1584,20 @@ async fn post_editor_new(
 ) -> Html<String> {
     let mut ctx = admin_context(&state, &session).await;
     let post_type = params.post_type.as_deref().unwrap_or("post");
+    if let Some(label) = custom_type_label(&state, post_type) {
+        let mut ctx = admin_context(&state, &session).await;
+        ctx.insert("active_page", &format!("type-{post_type}"));
+        ctx.insert("type_label", &label);
+        ctx.insert("post_type", post_type);
+        ctx.insert("post_id", &0u64);
+        ctx.insert("post_title", "");
+        ctx.insert("post_content", "");
+        ctx.insert("post_excerpt", "");
+        ctx.insert("post_status", "draft");
+        ctx.insert("post_slug", "");
+        ctx.insert("editing", &false);
+        return render_admin(&state, "admin/custom-post-edit.html", &ctx);
+    }
     ctx.insert(
         "active_page",
         if post_type == "page" {
@@ -1629,6 +1676,20 @@ async fn post_editor_edit(
 
     match post {
         Some(p) => {
+            if let Some(label) = custom_type_label(&state, &p.post_type) {
+                let mut ctx = admin_context(&state, &session).await;
+                ctx.insert("active_page", &format!("type-{}", p.post_type));
+                ctx.insert("type_label", &label);
+                ctx.insert("post_type", p.post_type.as_str());
+                ctx.insert("post_id", &p.id);
+                ctx.insert("post_title", &p.post_title);
+                ctx.insert("post_content", &p.post_content);
+                ctx.insert("post_excerpt", &p.post_excerpt);
+                ctx.insert("post_status", p.post_status.as_str());
+                ctx.insert("post_slug", p.post_name.as_str());
+                ctx.insert("editing", &true);
+                return render_admin(&state, "admin/custom-post-edit.html", &ctx).into_response();
+            }
             let mut ctx = admin_context(&state, &session).await;
             ctx.insert(
                 "active_page",
@@ -4749,7 +4810,29 @@ async fn post_submit(
 ) -> Response {
     let now = chrono::Utc::now().naive_utc();
     let post_type = form.post_type.as_deref().unwrap_or("post");
+    let custom = custom_type_label(&state, post_type);
+    if post_type != "post" && post_type != "page" && custom.is_none() {
+        return Redirect::to("/wp-admin/edit.php").into_response();
+    }
+    if custom.is_some() {
+        let nonce = form.wpnonce.as_deref().unwrap_or("");
+        if state
+            .nonces
+            .verify_nonce(nonce, "save_post", session.user_id)
+            .is_none()
+        {
+            return (StatusCode::FORBIDDEN, "Invalid or expired security token").into_response();
+        }
+    }
     let status = form.post_status.as_deref().unwrap_or("draft");
+    let status = if matches!(
+        status,
+        "publish" | "draft" | "pending" | "private" | "future"
+    ) {
+        status
+    } else {
+        "draft"
+    };
     let title = form.post_title.as_deref().unwrap_or("");
     let content = form.post_content.as_deref().unwrap_or("");
     let excerpt = form.post_excerpt.as_deref().unwrap_or("");
@@ -4769,6 +4852,21 @@ async fn post_submit(
             .ok()
             .flatten();
         if let Some(p) = post {
+            let stored_custom = custom_type_label(&state, &p.post_type);
+            if p.post_type != "post" && p.post_type != "page" && stored_custom.is_none() {
+                return Redirect::to("/wp-admin/edit.php").into_response();
+            }
+            if stored_custom.is_some() {
+                let nonce = form.wpnonce.as_deref().unwrap_or("");
+                if state
+                    .nonces
+                    .verify_nonce(nonce, "save_post", session.user_id)
+                    .is_none()
+                {
+                    return (StatusCode::FORBIDDEN, "Invalid or expired security token")
+                        .into_response();
+                }
+            }
             let mut active: wp_posts::ActiveModel = p.into();
             active.post_title = Set(title.to_string());
             active.post_content = Set(oxidepress_core::wp_kses_post(content));

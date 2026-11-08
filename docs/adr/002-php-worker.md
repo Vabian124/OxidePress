@@ -70,7 +70,7 @@ Yoast、ACF、Contact Form 7、Wordfence、WooCommerce が保存する行は、�
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
 - `oxidepress-admin` は、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - `wp_enqueue_style` は `wp_head` に `link` タグを出力する。`wp_enqueue_script` は `wp_head` に `script` タグを出力し、フッター指定のときは `wp_footer` に出力する。ホストがまだ `wp_enqueue_scripts` を発火していないとき、ワーカーは最初の出力の前にそれを一度だけ実行する。
-- 管理者は `add_menu_page`、`add_options_page`、`add_submenu_page` で登録されたプラグイン画面を `/wp-admin/admin.php?page={slug}` で開く。ワーカーは `admin_menu` を一度実行し、その画面のコールバックを出力する。`/wp-admin/options.php` に送られた `register_setting` のオプションは、そのグループのものだけ保存する。`siteurl`、`home`、`active_plugins`、`template`、`stylesheet`、`wp_user_roles`、`users_can_register`、`default_role`、ソルト、`rustpress_*` キーは、プラグインが登録しても拒否する。投稿タイプの一覧画面はない。
+- 管理者は `add_menu_page`、`add_options_page`、`add_submenu_page` で登録されたプラグイン画面を `/wp-admin/admin.php?page={slug}` で開く。ワーカーは `admin_menu` を一度実行し、その画面のコールバックを出力する。`/wp-admin/options.php` に送られた `register_setting` のオプションは、そのグループのものだけ保存する。`siteurl`、`home`、`active_plugins`、`template`、`stylesheet`、`wp_user_roles`、`users_can_register`、`default_role`、ソルト、`rustpress_*` キーは、プラグインが登録しても拒否する。`init` で登録された投稿タイプは `wp_posts` に保存する。管理者は `/wp-admin/edit.php?post_type={name}` で一覧と編集を行う。`get_permalink` は `/{slug}/` である。リビジョンとテンプレートのタイプは拒否する。ブロックエディタは投稿と固定ページのままである。
 - `is_admin()` と `current_user_can()` はその画面の描画と保存の間だけ true。`is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - プライベートアドレス、内部ホスト名、HTTP 以外のスキームは拒否する。リダイレクトは追わない。1 MiB を超える応答は拒否する。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。

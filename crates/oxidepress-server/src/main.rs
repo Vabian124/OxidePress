@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to pass the visitor address into request handlers.
+// Modified by Vabian124 on 2026-11-09 to store plugin post types and let the worker write posts.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -228,11 +228,47 @@ async fn main() -> Result<()> {
         &config.plugins_dir,
         &site_url,
         &options,
+        &db,
         &plugin_registry,
         &hooks,
         &shortcodes,
     )
     .await;
+    let post_types = oxidepress_core::PostTypeRegistry::new();
+    if let Some(runtime) = &php_runtime {
+        match runtime.registered_post_types() {
+            Ok(types) => {
+                for kind in types {
+                    if post_types
+                        .get(&kind.name)
+                        .is_some_and(|existing| existing.builtin)
+                    {
+                        continue;
+                    }
+                    post_types.register(
+                        &kind.name,
+                        oxidepress_core::post_type::PostTypeArgs {
+                            label: kind.label.clone(),
+                            labels: oxidepress_core::post_type::PostTypeLabels {
+                                name: kind.label,
+                                singular_name: kind.singular,
+                                ..Default::default()
+                            },
+                            public: kind.public,
+                            show_ui: kind.show_ui,
+                            show_in_menu: kind.show_in_menu,
+                            show_in_rest: kind.show_ui,
+                            ..Default::default()
+                        },
+                        false,
+                    );
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, "PHP post types were not loaded");
+            }
+        }
+    }
 
     // Initialize cron system (before AppState so it can be stored in state)
     let cron = Arc::new(CronManager::new());
@@ -401,6 +437,7 @@ async fn main() -> Result<()> {
         audit_log,
         wasm_host,
         php_runtime,
+        post_types: post_types.clone(),
         multisite_resolver,
         multisite_network,
     });
@@ -508,6 +545,7 @@ async fn main() -> Result<()> {
         site_url,
         nonces: state.nonces.clone(),
         plugins: state.plugin_registry.clone(),
+        post_types: state.post_types.clone(),
     };
     app = app.merge(oxidepress_api::routes(api_state));
 
@@ -641,6 +679,7 @@ async fn load_php_plugins(
     plugins_dir: &str,
     site_url: &str,
     options: &oxidepress_db::options::OptionsManager,
+    db: &sea_orm::DatabaseConnection,
     registry: &oxidepress_plugins::PluginRegistry,
     hooks: &HookRegistry,
     shortcodes: &oxidepress_core::shortcode::ShortcodeRegistry,
@@ -657,6 +696,7 @@ async fn load_php_plugins(
 
     let host = Arc::new(OptionHost {
         options: options.clone(),
+        db: db.clone(),
     });
     let php = std::env::var_os("OXIDEPRESS_PHP")
         .map(std::path::PathBuf::from)
@@ -713,6 +753,7 @@ async fn load_php_plugins(
 
 struct OptionHost {
     options: oxidepress_db::options::OptionsManager,
+    db: sea_orm::DatabaseConnection,
 }
 
 impl PhpHost for OptionHost {
@@ -734,6 +775,179 @@ impl PhpHost for OptionHost {
         let name = name.to_string();
         block_on_host(async move { options.delete_option(&name).await.unwrap_or(false) })
     }
+
+    fn get_post(&self, id: u64) -> Option<oxidepress_php::PostRecord> {
+        use sea_orm::EntityTrait;
+        let db = self.db.clone();
+        block_on_host(async move {
+            let row = oxidepress_db::entities::wp_posts::Entity::find_by_id(id)
+                .one(&db)
+                .await
+                .ok()
+                .flatten()?;
+            stored_post(row)
+        })
+    }
+
+    fn query_posts(&self, query: &oxidepress_php::PostQuery) -> Vec<oxidepress_php::PostRecord> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, QuerySelect};
+        let db = self.db.clone();
+        let query = query.clone();
+        block_on_host(async move {
+            let mut finder = oxidepress_db::entities::wp_posts::Entity::find()
+                .filter(oxidepress_db::entities::wp_posts::Column::PostType.eq(query.post_type))
+                .filter(oxidepress_db::entities::wp_posts::Column::PostStatus.eq(query.status));
+            if !query.name.is_empty() {
+                finder = finder
+                    .filter(oxidepress_db::entities::wp_posts::Column::PostName.eq(query.name));
+            }
+            if !query.search.is_empty() {
+                finder = finder.filter(
+                    oxidepress_db::entities::wp_posts::Column::PostTitle.contains(query.search),
+                );
+            }
+            finder
+                .order_by_desc(oxidepress_db::entities::wp_posts::Column::PostDate)
+                .limit(query.limit)
+                .all(&db)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(stored_post)
+                .collect()
+        })
+    }
+
+    fn insert_post(&self, draft: &oxidepress_php::PostDraft) -> Result<u64, String> {
+        use sea_orm::{ActiveModelTrait, Set};
+        if !oxidepress_php::content_type_allowed(&draft.post_type) {
+            return Err("post type is not allowed".to_string());
+        }
+        let draft = draft.clone();
+        let db = self.db.clone();
+        block_on_host(async move {
+            let now = chrono::Utc::now().naive_utc();
+            let row = oxidepress_db::entities::wp_posts::ActiveModel {
+                post_author: Set(1),
+                post_date: Set(now),
+                post_date_gmt: Set(now),
+                post_content: Set(oxidepress_core::wp_kses_post(&draft.content)),
+                post_title: Set(draft.title),
+                post_excerpt: Set(draft.excerpt),
+                post_status: Set(draft.status),
+                comment_status: Set("open".to_string()),
+                ping_status: Set("closed".to_string()),
+                post_password: Set(String::new()),
+                post_name: Set(draft.name),
+                to_ping: Set(String::new()),
+                pinged: Set(String::new()),
+                post_modified: Set(now),
+                post_modified_gmt: Set(now),
+                post_content_filtered: Set(String::new()),
+                post_parent: Set(draft.parent),
+                guid: Set(String::new()),
+                menu_order: Set(0),
+                post_type: Set(draft.post_type),
+                post_mime_type: Set(String::new()),
+                comment_count: Set(0),
+                ..Default::default()
+            };
+            row.insert(&db)
+                .await
+                .map(|saved| saved.id)
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn update_post(&self, id: u64, draft: &oxidepress_php::PostDraft) -> Result<(), String> {
+        use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+        if !oxidepress_php::content_type_allowed(&draft.post_type) {
+            return Err("post type is not allowed".to_string());
+        }
+        let draft = draft.clone();
+        let db = self.db.clone();
+        block_on_host(async move {
+            let Some(row) = oxidepress_db::entities::wp_posts::Entity::find_by_id(id)
+                .one(&db)
+                .await
+                .map_err(|err| err.to_string())?
+            else {
+                return Err("post was not found".to_string());
+            };
+            if !oxidepress_php::content_type_allowed(&row.post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            let now = chrono::Utc::now().naive_utc();
+            let mut active: oxidepress_db::entities::wp_posts::ActiveModel = row.into();
+            active.post_title = Set(draft.title);
+            active.post_content = Set(oxidepress_core::wp_kses_post(&draft.content));
+            active.post_excerpt = Set(draft.excerpt);
+            active.post_status = Set(draft.status);
+            active.post_name = Set(draft.name);
+            active.post_parent = Set(draft.parent);
+            active.post_modified = Set(now);
+            active.post_modified_gmt = Set(now);
+            active
+                .update(&db)
+                .await
+                .map(|_| ())
+                .map_err(|err| err.to_string())
+        })
+    }
+
+    fn delete_post(&self, id: u64, force: bool) -> Result<bool, String> {
+        use sea_orm::{ActiveModelTrait, EntityTrait, ModelTrait, Set};
+        let db = self.db.clone();
+        block_on_host(async move {
+            let Some(row) = oxidepress_db::entities::wp_posts::Entity::find_by_id(id)
+                .one(&db)
+                .await
+                .map_err(|err| err.to_string())?
+            else {
+                return Ok(false);
+            };
+            if !oxidepress_php::content_type_allowed(&row.post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            if force {
+                row.delete(&db)
+                    .await
+                    .map(|_| true)
+                    .map_err(|err| err.to_string())
+            } else {
+                let mut active: oxidepress_db::entities::wp_posts::ActiveModel = row.into();
+                active.post_status = Set("trash".to_string());
+                active
+                    .update(&db)
+                    .await
+                    .map(|_| true)
+                    .map_err(|err| err.to_string())
+            }
+        })
+    }
+}
+
+fn stored_post(
+    row: oxidepress_db::entities::wp_posts::Model,
+) -> Option<oxidepress_php::PostRecord> {
+    if !oxidepress_php::content_type_allowed(&row.post_type) {
+        return None;
+    }
+    Some(oxidepress_php::PostRecord {
+        id: row.id,
+        author: row.post_author,
+        date: row.post_date.format("%Y-%m-%d %H:%M:%S").to_string(),
+        content: row.post_content,
+        title: row.post_title,
+        excerpt: row.post_excerpt,
+        status: row.post_status,
+        name: row.post_name,
+        post_type: row.post_type,
+        parent: row.post_parent,
+        guid: row.guid,
+        menu_order: row.menu_order,
+        comment_count: row.comment_count,
+    })
 }
 
 fn block_on_host<T>(future: impl std::future::Future<Output = T>) -> T {

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-09 to render the custom post editor template.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::path::Path;
@@ -106,4 +106,57 @@ pub fn resolve_theme_json_path(
         }
     }
     Path::new(default_static).join("theme.json")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    #[test]
+    fn custom_post_editor_lists_the_type_and_renders_the_form() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("templates")
+            .join("admin");
+        let mut tera = init_admin_tera(dir.to_str().expect("utf8 path")).expect("admin templates");
+        tera.register_function(
+            "__",
+            |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                Ok(args
+                    .get("key")
+                    .cloned()
+                    .unwrap_or_else(|| tera::Value::String(String::new())))
+            },
+        );
+        let mut ctx = tera::Context::new();
+        ctx.insert("type_label", "Events");
+        ctx.insert("editing", &false);
+        ctx.insert("wpnonce_save_post", "nonce");
+        ctx.insert("post_id", &0u64);
+        ctx.insert("post_type", "event");
+        ctx.insert("post_title", "Launch");
+        ctx.insert("post_content", "<p>body</p>");
+        ctx.insert("post_excerpt", "");
+        ctx.insert("post_slug", "launch");
+        ctx.insert("post_status", "draft");
+        ctx.insert("active_page", "type-event");
+        ctx.insert(
+            "custom_post_types",
+            &serde_json::json!([{ "name": "event", "label": "Events" }]),
+        );
+        let html = tera
+            .render("admin/custom-post-edit.html", &ctx)
+            .expect("render custom post editor");
+        assert!(html.contains("name=\"post_type\" value=\"event\""));
+        assert!(html.contains("edit.php?post_type=event"));
+        assert!(html.contains("class=\"menu-item active\""));
+        assert!(html.contains("Launch"));
+        assert!(
+            html.contains("&lt;p&gt;body&lt;/p&gt;")
+                || html.contains("&lt;p&gt;body&lt;&#x2F;p&gt;"),
+            "content was not escaped"
+        );
+        assert!(html.contains("value=\"draft\" selected") || html.contains("selected"));
+    }
 }

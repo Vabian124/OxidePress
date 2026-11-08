@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to keep stored contact forms for the shortcode.
+// Modified by Vabian124 on 2026-11-09 to keep plugin post types on the application state.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::collections::HashMap;
@@ -13,6 +13,7 @@ use oxidepress_cache::{ObjectCache, PageCache, RedisCache, TransientCache};
 use oxidepress_commerce::{CartManager, OrderManager, ProductCatalog};
 use oxidepress_core::hooks::HookRegistry;
 use oxidepress_core::nonce::NonceManager;
+use oxidepress_core::post_type::PostTypeRegistry;
 use oxidepress_core::rewrite::RewriteRules;
 use oxidepress_core::shortcode::ShortcodeRegistry;
 use oxidepress_cron::CronManager;
@@ -68,6 +69,8 @@ pub struct AppState {
     /// Long-lived PHP worker for dropped-in plugins. Absent when none are active
     /// or when `php` is not installed.
     pub php_runtime: Option<oxidepress_php::PhpRuntime>,
+    /// Built-in post types plus any a PHP plugin registered on `init`.
+    pub post_types: PostTypeRegistry,
     // Multisite support
     pub multisite_resolver: Option<Arc<oxidepress_multisite::SiteResolver>>,
     pub multisite_network: Option<Arc<RwLock<oxidepress_multisite::NetworkManager>>>,

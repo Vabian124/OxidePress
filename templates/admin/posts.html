@@ -3,7 +3,7 @@
 {% block title %}{{ type_label | default(value="Posts") }}{% endblock %}
 
 {% block content %}
-<h1>{{ type_label | default(value="Posts") }} <a href="/wp-admin/post-new.php{% if post_type == 'page' %}?post_type=page{% endif %}" class="add-new-btn">Add New</a></h1>
+<h1>{{ type_label | default(value="Posts") }} <a href="/wp-admin/post-new.php{% if post_type != 'post' %}?post_type={{ post_type }}{% endif %}" class="add-new-btn">Add New</a></h1>
 
 <ul class="subsubsub">
     <li><a href="/wp-admin/edit.php?{% if post_type == 'page' %}post_type=page&{% endif %}status=all" {% if status_filter == "all" %}class="current"{% endif %}>All</a></li>

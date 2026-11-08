@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-09 to refuse unregistered post types and statuses.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -618,7 +618,16 @@ async fn create_post(
     let title = input.title.unwrap_or_default();
     let slug = input.slug.unwrap_or_else(|| slugify(&title));
     let status = input.status.unwrap_or_else(|| "draft".to_string());
+    if !matches!(
+        status.as_str(),
+        "publish" | "draft" | "pending" | "private" | "future"
+    ) {
+        return Err(WpError::bad_request("status is not allowed"));
+    }
     let post_type = input.post_type.unwrap_or_else(|| "post".to_string());
+    if !state.post_types.allows_content(&post_type) {
+        return Err(WpError::bad_request("post type is not allowed"));
+    }
     let featured_media = input.featured_media;
 
     // Parse scheduled date if provided

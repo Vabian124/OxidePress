@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
+// Modified by Vabian124 on 2026-11-09 to let plugins register post types and store posts.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -135,6 +135,12 @@ while (true) {
             $rendered = oxidepress_render_admin_page($slug, $nonce);
             $rendered['id'] = $oxidepress_request_id;
             oxidepress_write_frame($rendered);
+        } elseif ($op === 'post_types') {
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => true,
+                'types' => oxidepress_list_post_types(),
+            ));
         } elseif ($op === 'admin_save') {
             $group = isset($frame['group']) ? (string)$frame['group'] : '';
             $values = isset($frame['values']) && is_array($frame['values']) ? $frame['values'] : array();
@@ -944,6 +950,246 @@ function register_post_type($post_type, $args = array())
     $object = new WP_Post_Type($post_type, $args);
     $oxidepress_post_types[$post_type] = $object;
     return $object;
+}
+
+function oxidepress_list_post_types()
+{
+    global $oxidepress_post_types;
+
+    if (!did_action('init')) {
+        do_action('init');
+    }
+    $list = array();
+    foreach ($oxidepress_post_types as $name => $object) {
+        $name = (string)$name;
+        if (!oxidepress_token($name, 20) || oxidepress_type_is_internal($name)) {
+            continue;
+        }
+        $args = isset($object->args) && is_array($object->args) ? $object->args : array();
+        $public = !empty($object->public);
+        $show_ui = array_key_exists('show_ui', $args) ? !empty($args['show_ui']) : $public;
+        $show_in_menu = array_key_exists('show_in_menu', $args) ? !empty($args['show_in_menu']) : $show_ui;
+        $label = isset($args['label']) ? oxidepress_text($args['label']) : '';
+        if ($label === '' && isset($object->label)) {
+            $label = (string)$object->label;
+        }
+        if ($label === '') {
+            $label = $name;
+        }
+        $singular = $label;
+        if (isset($object->labels->singular_name) && (string)$object->labels->singular_name !== '') {
+            $singular = (string)$object->labels->singular_name;
+        }
+        $list[] = array(
+            'name' => $name,
+            'label' => $label,
+            'singular' => $singular,
+            'public' => $public,
+            'show_ui' => $show_ui,
+            'show_in_menu' => $show_in_menu,
+        );
+        if (count($list) >= 40) {
+            break;
+        }
+    }
+    return $list;
+}
+
+function oxidepress_type_is_internal($name)
+{
+    return in_array($name, array(
+        'revision',
+        'nav_menu_item',
+        'custom_css',
+        'customize_changeset',
+        'oembed_cache',
+        'user_request',
+        'wp_block',
+        'wp_template',
+        'wp_template_part',
+        'wp_global_styles',
+        'wp_navigation',
+        'wp_font_family',
+        'wp_font_face',
+    ), true);
+}
+
+if (!defined('OBJECT')) {
+    define('OBJECT', 'OBJECT');
+}
+if (!defined('ARRAY_A')) {
+    define('ARRAY_A', 'ARRAY_A');
+}
+if (!defined('ARRAY_N')) {
+    define('ARRAY_N', 'ARRAY_N');
+}
+
+class WP_Post
+{
+    public $ID = 0;
+    public $post_author = 0;
+    public $post_date = '';
+    public $post_content = '';
+    public $post_title = '';
+    public $post_excerpt = '';
+    public $post_status = '';
+    public $post_name = '';
+    public $post_type = 'post';
+    public $post_parent = 0;
+    public $guid = '';
+    public $menu_order = 0;
+    public $comment_count = 0;
+}
+
+function oxidepress_post_from_row($row)
+{
+    if (!is_array($row) || !isset($row['id'])) {
+        return null;
+    }
+    $post = new WP_Post();
+    $post->ID = (int)$row['id'];
+    $post->post_author = isset($row['author']) ? (int)$row['author'] : 0;
+    $post->post_date = isset($row['date']) ? (string)$row['date'] : '';
+    $post->post_content = isset($row['content']) ? (string)$row['content'] : '';
+    $post->post_title = isset($row['title']) ? (string)$row['title'] : '';
+    $post->post_excerpt = isset($row['excerpt']) ? (string)$row['excerpt'] : '';
+    $post->post_status = isset($row['status']) ? (string)$row['status'] : '';
+    $post->post_name = isset($row['name']) ? (string)$row['name'] : '';
+    $post->post_type = isset($row['type']) ? (string)$row['type'] : 'post';
+    $post->post_parent = isset($row['parent']) ? (int)$row['parent'] : 0;
+    $post->guid = isset($row['guid']) ? (string)$row['guid'] : '';
+    $post->menu_order = isset($row['menu_order']) ? (int)$row['menu_order'] : 0;
+    $post->comment_count = isset($row['comment_count']) ? (int)$row['comment_count'] : 0;
+    return $post;
+}
+
+function get_post($post = null, $output = 'OBJECT', $filter = 'raw')
+{
+    if ($post instanceof WP_Post) {
+        return $post;
+    }
+    $id = (int)$post;
+    if ($id <= 0) {
+        return null;
+    }
+    $row = oxidepress_call('get_post', array('post_id' => $id));
+    return oxidepress_post_from_row($row);
+}
+
+function wp_insert_post($postarr, $wp_error = false, $fire_after_hooks = true)
+{
+    if (!is_array($postarr)) {
+        return $wp_error ? new WP_Error('invalid_post', 'post is not an array') : 0;
+    }
+    if (!empty($postarr['ID'])) {
+        return wp_update_post($postarr, $wp_error);
+    }
+    $type = isset($postarr['post_type']) ? sanitize_key($postarr['post_type']) : 'post';
+    if ($type === '') {
+        $type = 'post';
+    }
+    $status = isset($postarr['post_status']) ? sanitize_key($postarr['post_status']) : 'draft';
+    if ($status === '') {
+        $status = 'draft';
+    }
+    $result = oxidepress_call('insert_post', array('post' => array(
+        'title' => isset($postarr['post_title']) ? (string)$postarr['post_title'] : '',
+        'content' => isset($postarr['post_content']) ? (string)$postarr['post_content'] : '',
+        'excerpt' => isset($postarr['post_excerpt']) ? (string)$postarr['post_excerpt'] : '',
+        'status' => $status,
+        'name' => isset($postarr['post_name']) ? (string)$postarr['post_name'] : '',
+        'type' => $type,
+        'parent' => isset($postarr['post_parent']) ? (int)$postarr['post_parent'] : 0,
+    )));
+    $id = is_numeric($result) ? (int)$result : 0;
+    if ($id <= 0) {
+        return $wp_error ? new WP_Error('db_insert_error', 'post was not stored') : 0;
+    }
+    return $id;
+}
+
+function wp_update_post($postarr, $wp_error = false, $fire_after_hooks = true)
+{
+    if (!is_array($postarr)) {
+        return $wp_error ? new WP_Error('invalid_post', 'post is not an array') : 0;
+    }
+    $id = isset($postarr['ID']) ? (int)$postarr['ID'] : 0;
+    $current = get_post($id);
+    if (!$current) {
+        return $wp_error ? new WP_Error('invalid_post', 'post was not found') : 0;
+    }
+    $ok = oxidepress_call('update_post', array(
+        'post_id' => $id,
+        'post' => array(
+            'title' => array_key_exists('post_title', $postarr) ? (string)$postarr['post_title'] : $current->post_title,
+            'content' => array_key_exists('post_content', $postarr) ? (string)$postarr['post_content'] : $current->post_content,
+            'excerpt' => array_key_exists('post_excerpt', $postarr) ? (string)$postarr['post_excerpt'] : $current->post_excerpt,
+            'status' => array_key_exists('post_status', $postarr) ? sanitize_key($postarr['post_status']) : $current->post_status,
+            'name' => array_key_exists('post_name', $postarr) ? (string)$postarr['post_name'] : $current->post_name,
+            'type' => $current->post_type,
+            'parent' => array_key_exists('post_parent', $postarr) ? (int)$postarr['post_parent'] : (int)$current->post_parent,
+        ),
+    ));
+    if (!$ok) {
+        return $wp_error ? new WP_Error('db_update_error', 'post was not updated') : 0;
+    }
+    return $id;
+}
+
+function wp_delete_post($postid, $force_delete = false)
+{
+    $id = (int)$postid;
+    if ($id <= 0) {
+        return false;
+    }
+    $ok = oxidepress_call('delete_post', array(
+        'post_id' => $id,
+        'force' => (bool)$force_delete,
+    ));
+    return $ok ? get_post($id) || true : false;
+}
+
+function get_posts($args = null)
+{
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $limit = 5;
+    if (isset($args['numberposts'])) {
+        $limit = (int)$args['numberposts'];
+    } elseif (isset($args['posts_per_page'])) {
+        $limit = (int)$args['posts_per_page'];
+    }
+    if ($limit === -1) {
+        $limit = 20;
+    }
+    $rows = oxidepress_call('query_posts', array('query' => array(
+        'type' => isset($args['post_type']) ? sanitize_key($args['post_type']) : 'post',
+        'status' => isset($args['post_status']) ? sanitize_key($args['post_status']) : 'publish',
+        'name' => isset($args['name']) ? (string)$args['name'] : '',
+        'search' => isset($args['s']) ? (string)$args['s'] : '',
+        'limit' => $limit,
+    )));
+    if (!is_array($rows)) {
+        return array();
+    }
+    $posts = array();
+    foreach ($rows as $row) {
+        $post = oxidepress_post_from_row($row);
+        if ($post) {
+            $posts[] = $post;
+        }
+    }
+    return $posts;
+}
+
+function get_permalink($post = 0, $leavename = false)
+{
+    $post = get_post($post);
+    if (!$post || $post->post_name === '') {
+        return false;
+    }
+    return rtrim(site_url(), '/') . '/' . rawurlencode($post->post_name) . '/';
 }
 
 function post_type_exists($post_type)

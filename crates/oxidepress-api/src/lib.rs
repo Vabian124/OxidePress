@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to share the plugin registry with REST.
+// Modified by Vabian124 on 2026-11-09 to share plugin post types with REST.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 #![recursion_limit = "256"]
@@ -56,6 +56,7 @@ pub struct ApiState {
     pub site_url: String,
     pub nonces: std::sync::Arc<oxidepress_core::nonce::NonceManager>,
     pub plugins: oxidepress_plugins::PluginRegistry,
+    pub post_types: oxidepress_core::PostTypeRegistry,
 }
 
 /// Authenticated user info injected by the auth middleware into request extensions.

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and save registered options.
+// Modified by Vabian124 on 2026-11-09 to let plugins register post types and store posts.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -27,6 +27,36 @@ pub trait PhpHost: Send + Sync {
     fn get_option(&self, name: &str) -> Option<String>;
     fn update_option(&self, name: &str, value: &str) -> bool;
     fn delete_option(&self, name: &str) -> bool;
+
+    /// Read one post. The default has no post store.
+    fn get_post(&self, id: u64) -> Option<crate::posts::PostRecord> {
+        let _ = id;
+        None
+    }
+
+    /// List posts for `get_posts`. The default returns nothing.
+    fn query_posts(&self, query: &crate::posts::PostQuery) -> Vec<crate::posts::PostRecord> {
+        let _ = query;
+        Vec::new()
+    }
+
+    /// Insert one post. The default has no database.
+    fn insert_post(&self, draft: &crate::posts::PostDraft) -> Result<u64, String> {
+        let _ = draft;
+        Err("posts are not available".to_string())
+    }
+
+    /// Replace the editable fields of one post.
+    fn update_post(&self, id: u64, draft: &crate::posts::PostDraft) -> Result<(), String> {
+        let _ = (id, draft);
+        Err("posts are not available".to_string())
+    }
+
+    /// Trash a post, or delete the row when `force` is set.
+    fn delete_post(&self, id: u64, force: bool) -> Result<bool, String> {
+        let _ = (id, force);
+        Err("posts are not available".to_string())
+    }
 
     /// Perform one public HTTP request. The default refuses private addresses.
     fn http_request(
@@ -336,6 +366,19 @@ impl PhpRuntime {
             })
             .unwrap_or_default();
         Ok(saved)
+    }
+
+    /// Post types plugins registered, after `init` has run once inside the worker.
+    pub fn registered_post_types(&self) -> Result<Vec<crate::posts::RegisteredPostType>, PhpError> {
+        let frame = self.roundtrip(json!({ "op": "post_types" }))?;
+        ensure_ok(&frame)?;
+        let Some(types) = frame.get("types").and_then(Value::as_array) else {
+            return Ok(Vec::new());
+        };
+        Ok(types
+            .iter()
+            .filter_map(crate::posts::type_from_value)
+            .collect())
     }
 
     /// Take echoed output captured while `tag` ran, and clear it.
@@ -710,6 +753,41 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
         }
         Some("delete_option") => Value::Bool(host.delete_option(&name)),
         Some("http") => crate::http::dispatch(host, frame),
+        Some("get_post") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            match host.get_post(id) {
+                Some(post) => crate::posts::record_json(&post),
+                None => Value::Null,
+            }
+        }
+        Some("query_posts") => match crate::posts::query_from_value(frame.get("query")) {
+            Ok(query) => Value::Array(
+                host.query_posts(&query)
+                    .iter()
+                    .map(crate::posts::record_json)
+                    .collect(),
+            ),
+            Err(_) => Value::Array(Vec::new()),
+        },
+        Some("insert_post") => match crate::posts::draft_from_value(frame.get("post")) {
+            Ok(draft) => match host.insert_post(&draft) {
+                Ok(id) => Value::from(id),
+                Err(_) => Value::Null,
+            },
+            Err(_) => Value::Null,
+        },
+        Some("update_post") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            match crate::posts::draft_from_value(frame.get("post")) {
+                Ok(draft) => Value::Bool(host.update_post(id, &draft).is_ok()),
+                Err(_) => Value::Bool(false),
+            }
+        }
+        Some("delete_post") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let force = frame.get("force").and_then(Value::as_bool).unwrap_or(false);
+            Value::Bool(host.delete_post(id, force).unwrap_or(false))
+        }
         _ => Value::Null,
     }
 }
@@ -742,6 +820,8 @@ mod tests {
     struct MemHost {
         options: Mutex<HashMap<String, String>>,
         http: Mutex<Vec<crate::http::HttpRequest>>,
+        posts: Mutex<Vec<crate::posts::PostRecord>>,
+        next_post: Mutex<u64>,
     }
 
     impl MemHost {
@@ -749,6 +829,8 @@ mod tests {
             Self {
                 options: Mutex::new(HashMap::new()),
                 http: Mutex::new(Vec::new()),
+                posts: Mutex::new(Vec::new()),
+                next_post: Mutex::new(1),
             }
         }
 
@@ -775,6 +857,83 @@ mod tests {
 
         fn delete_option(&self, name: &str) -> bool {
             self.options.lock().unwrap().remove(name).is_some()
+        }
+
+        fn get_post(&self, id: u64) -> Option<crate::posts::PostRecord> {
+            self.posts
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|post| post.id == id)
+                .cloned()
+        }
+
+        fn query_posts(&self, query: &crate::posts::PostQuery) -> Vec<crate::posts::PostRecord> {
+            self.posts
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|post| post.post_type == query.post_type && post.status == query.status)
+                .filter(|post| query.name.is_empty() || post.name == query.name)
+                .filter(|post| query.search.is_empty() || post.title.contains(&query.search))
+                .take(query.limit as usize)
+                .cloned()
+                .collect()
+        }
+
+        fn insert_post(&self, draft: &crate::posts::PostDraft) -> Result<u64, String> {
+            let mut next = self.next_post.lock().unwrap();
+            let id = *next;
+            *next += 1;
+            self.posts.lock().unwrap().push(crate::posts::PostRecord {
+                id,
+                author: 1,
+                date: "2026-11-09 00:00:00".to_string(),
+                content: draft.content.clone(),
+                title: draft.title.clone(),
+                excerpt: draft.excerpt.clone(),
+                status: draft.status.clone(),
+                name: draft.name.clone(),
+                post_type: draft.post_type.clone(),
+                parent: draft.parent,
+                guid: String::new(),
+                menu_order: 0,
+                comment_count: 0,
+            });
+            Ok(id)
+        }
+
+        fn update_post(&self, id: u64, draft: &crate::posts::PostDraft) -> Result<(), String> {
+            let mut posts = self.posts.lock().unwrap();
+            let Some(post) = posts.iter_mut().find(|post| post.id == id) else {
+                return Err("missing".to_string());
+            };
+            if !crate::posts::content_type_allowed(&post.post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            post.title = draft.title.clone();
+            post.content = draft.content.clone();
+            post.excerpt = draft.excerpt.clone();
+            post.status = draft.status.clone();
+            post.name = draft.name.clone();
+            post.parent = draft.parent;
+            Ok(())
+        }
+
+        fn delete_post(&self, id: u64, force: bool) -> Result<bool, String> {
+            let mut posts = self.posts.lock().unwrap();
+            let Some(index) = posts.iter().position(|post| post.id == id) else {
+                return Ok(false);
+            };
+            if !crate::posts::content_type_allowed(&posts[index].post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            if force {
+                posts.remove(index);
+            } else {
+                posts[index].status = "trash".to_string();
+            }
+            Ok(true)
         }
 
         fn http_request(
@@ -1295,6 +1454,90 @@ function queue_clean($value) {
 
         hooks.do_action("init", &json!({}));
         assert_eq!(host.get_option("settings_is_admin").as_deref(), Some("no"));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_register_a_post_type_and_store_a_post() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-events-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("events");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("events.php"),
+            r#"<?php
+/**
+ * Plugin Name: Events
+ */
+add_action('init', function () {
+    register_post_type('event', array(
+        'label' => 'Events',
+        'labels' => array('singular_name' => 'Event'),
+        'public' => true,
+        'show_ui' => true,
+    ));
+    $id = wp_insert_post(array(
+        'post_title' => 'Launch<script>',
+        'post_content' => 'Day',
+        'post_status' => 'publish',
+        'post_type' => 'event',
+    ));
+    update_option('event_id', (string)$id);
+    $post = get_post($id);
+    update_option('event_title', $post ? $post->post_title : '');
+    update_option('event_type', $post ? $post->post_type : '');
+    update_option('event_link', (string)get_permalink($post));
+    $found = get_posts(array(
+        'post_type' => 'event',
+        'post_status' => 'publish',
+        'numberposts' => 5,
+    ));
+    update_option('event_count', (string)count($found));
+    wp_update_post(array('ID' => $id, 'post_title' => 'Updated'));
+    $again = get_post($id);
+    update_option('event_updated', $again ? $again->post_title : '');
+    $revision = wp_insert_post(array(
+        'post_title' => 'Nope',
+        'post_type' => 'revision',
+        'post_status' => 'publish',
+    ));
+    update_option('event_revision', (string)$revision);
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found.iter().find(|plugin| plugin.name == "Events").unwrap();
+        runtime.load(plugin).unwrap();
+
+        let types = runtime.registered_post_types().unwrap();
+        assert_eq!(types.len(), 1, "{types:?}");
+        assert_eq!(types[0].name, "event");
+        assert_eq!(types[0].label, "Events");
+        assert_eq!(types[0].singular, "Event");
+        assert!(types[0].show_ui);
+        assert_eq!(host.get_option("event_id").as_deref(), Some("1"));
+        assert_eq!(host.get_option("event_title").as_deref(), Some("Launch"));
+        assert_eq!(host.get_option("event_type").as_deref(), Some("event"));
+        assert_eq!(
+            host.get_option("event_link").as_deref(),
+            Some("http://localhost/launch/")
+        );
+        assert_eq!(host.get_option("event_count").as_deref(), Some("1"));
+        assert_eq!(host.get_option("event_updated").as_deref(), Some("Updated"));
+        assert_eq!(host.get_option("event_revision").as_deref(), Some("0"));
+        let stored = host.get_post(1).unwrap();
+        assert_eq!(stored.post_type, "event");
+        assert_eq!(stored.title, "Updated");
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);

@@ -58,6 +58,16 @@
                 <span>{{ __( key="Pages") }}</span>
             </a>
             {% endif %}
+            {% if can_edit_posts | default(value=true) %}
+            {% if custom_post_types is defined %}
+            {% for type in custom_post_types %}
+            <a href="/wp-admin/edit.php?post_type={{ type.name }}" class="menu-item {% if active_page == 'type-' ~ type.name %}active{% endif %}">
+                <span class="dashicons dashicons-admin-post"></span>
+                <span>{{ type.label }}</span>
+            </a>
+            {% endfor %}
+            {% endif %}
+            {% endif %}
             {% if can_moderate_comments | default(value=true) %}
             <a href="/wp-admin/edit-comments.php" class="menu-item {% if active_page == 'comments' %}active{% endif %}">
                 <span class="dashicons dashicons-admin-comments"></span>

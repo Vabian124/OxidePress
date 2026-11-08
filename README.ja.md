@@ -34,7 +34,8 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 - プラグインが `wp-content/plugins` にあるとき、`ABSPATH` は `wp-content` を含むディレクトリである。そうでなければ、`wp-load.php` がある祖先を使う。どちらも無いときは、プラグインディレクトリの親である。プラグインディレクトリそのものではなく、このツリーは `wp-admin` も `wp-includes` も同梱しない。
 - プラグインを一つ無効化するときは、プロセスの再起動が要る。フックのレジストリは、コールバックを一つだけ外せない。
 - プラグインを有効化すると、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
-- `wp_enqueue_style` は `wp_head` に出力する。`wp_enqueue_script` は `wp_head` に出力し、フッター指定のスクリプトは `wp_footer` に出力する。管理者は `/wp-admin/admin.php?page={slug}` でプラグインの設定画面を開く。その画面が登録したオプションは `/wp-admin/options.php` に保存する。`siteurl`、`active_plugins`、権限オプション、ソルト、`rustpress_*` キーは拒否する。投稿タイプの一覧画面はまだない。
+- `wp_enqueue_style` は `wp_head` に出力する。`wp_enqueue_script` は `wp_head` に出力し、フッター指定のスクリプトは `wp_footer` に出力する。管理者は `/wp-admin/admin.php?page={slug}` でプラグインの設定画面を開く。その画面が登録したオプションは `/wp-admin/options.php` に保存する。`siteurl`、`active_plugins`、権限オプション、ソルト、`rustpress_*` キーは拒否する。
+- `init` で投稿タイプを登録したプラグインは、その行を保存し、読み、更新し、削除できる。管理者は `/wp-admin/edit.php?post_type={name}` で一覧と編集を行う。公開アドレスは `/{slug}/` である。リビジョンとテンプレートのタイプは拒否する。ブロックエディタは投稿と固定ページのままである。
 - `is_admin()` と `current_user_can()` はその設定画面の描画と保存の間だけ true。`is_multisite()` は false。有効化コールバックは読み込み時には走らない。
 - `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。プライベートアドレス、内部ホスト名、それ以外のスキームは拒否する。リダイレクトは追わない。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。

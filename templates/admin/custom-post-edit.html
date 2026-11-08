@@ -1,0 +1,43 @@
+{% extends "admin/base.html" %}
+
+{% block title %}{{ type_label }}{% endblock %}
+
+{% block content %}
+<h1>{% if editing %}Edit {{ type_label }}{% else %}Add {{ type_label }}{% endif %}</h1>
+
+<form method="post" action="/wp-admin/post.php">
+    <input type="hidden" name="_wpnonce" value="{{ wpnonce_save_post }}" />
+    <input type="hidden" name="post_id" value="{{ post_id }}" />
+    <input type="hidden" name="post_type" value="{{ post_type }}" />
+    <table class="form-table">
+        <tr>
+            <th><label for="post_title">Title</label></th>
+            <td><input type="text" id="post_title" name="post_title" value="{{ post_title }}" class="regular-text"></td>
+        </tr>
+        <tr>
+            <th><label for="post_content">Content</label></th>
+            <td><textarea id="post_content" name="post_content" rows="12" class="large-text">{{ post_content }}</textarea></td>
+        </tr>
+        <tr>
+            <th><label for="post_excerpt">Excerpt</label></th>
+            <td><textarea id="post_excerpt" name="post_excerpt" rows="3" class="large-text">{{ post_excerpt }}</textarea></td>
+        </tr>
+        <tr>
+            <th><label for="post_name">Slug</label></th>
+            <td><input type="text" id="post_name" name="post_name" value="{{ post_slug }}" class="regular-text"></td>
+        </tr>
+        <tr>
+            <th><label for="post_status">Status</label></th>
+            <td>
+                <select id="post_status" name="post_status">
+                    <option value="draft" {% if post_status == 'draft' %}selected{% endif %}>Draft</option>
+                    <option value="publish" {% if post_status == 'publish' %}selected{% endif %}>Published</option>
+                    <option value="pending" {% if post_status == 'pending' %}selected{% endif %}>Pending</option>
+                    <option value="private" {% if post_status == 'private' %}selected{% endif %}>Private</option>
+                </select>
+            </td>
+        </tr>
+    </table>
+    <p class="submit"><button type="submit" class="button button-primary">Save</button></p>
+</form>
+{% endblock %}
