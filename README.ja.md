@@ -35,7 +35,7 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 - プラグインを一つ無効化すると、そのフックとショートコードは止まり、他のプラグインは動き続ける。再度有効化するときは、ワーカーに読み込み済みのコピーを使う。
 - プラグインを有効化すると、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - `wp_enqueue_style` は `wp_head` に出力する。`wp_enqueue_script` は `wp_head` に出力し、フッター指定のスクリプトは `wp_footer` に出力する。管理者は `/wp-admin/admin.php?page={slug}` でプラグインの設定画面を開く。その画面が登録したオプションは `/wp-admin/options.php` に保存する。`siteurl`、`active_plugins`、権限オプション、ソルト、`rustpress_*` キーは拒否する。
-- `init` で投稿タイプを登録したプラグインは、その行を保存し、読み、更新し、削除できる。管理者は `/wp-admin/edit.php?post_type={name}` で一覧と編集を行う。公開アドレスは `/{slug}/` である。リビジョンとテンプレートのタイプは拒否する。`show_ui` のタイプはブロックエディタで開き、保存時に拒否されたタイプへは切り替えられない。
+- `init` で投稿タイプを登録したプラグインは、その行を保存し、読み、更新し、削除できる。管理者は `/wp-admin/edit.php?post_type={name}` で一覧と編集を行う。公開アドレスは `/{slug}/` である。リビジョンとテンプレートのタイプは拒否する。`show_ui` のタイプはブロックエディタで開き、保存時に拒否されたタイプへは切り替えられない。`get_post_meta` と `update_post_meta` はその行の `wp_postmeta` を読み書きする。値はテキストである。
 - `is_admin()` は `/wp-admin` と `/wp-login.php` で true。`current_user_can()` はログイン中の権限に従い、訪問者は false。プラグイン設定画面の描画中は `manage_options` が true のまま。`is_multisite()` は false。`register_activation_hook` は、管理者がそのプラグインを有効化したときに一度だけ走る。起動のたびに再実行はしない。
 - `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。プライベートアドレス、内部ホスト名、それ以外のスキームは拒否する。リダイレクトは追わない。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。

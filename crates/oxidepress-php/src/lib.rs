@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to let plugins register post types and store posts.
+// Modified by Vabian124 on 2026-11-09 to let plugins read and write post meta.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Run dropped-in WordPress plugins in one long-lived PHP process.
@@ -16,7 +16,10 @@ mod worker;
 
 pub use discover::{discover, DiscoveredPlugin};
 pub use error::PhpError;
-pub use posts::{content_type_allowed, PostDraft, PostQuery, PostRecord, RegisteredPostType};
+pub use posts::{
+    clean_meta_value, content_type_allowed, meta_key_allowed, PostDraft, PostMeta, PostQuery,
+    PostRecord, RegisteredPostType,
+};
 pub use worker::{
     worker_token, AdminPage, LoadedPlugin, PhpHost, PhpRuntime, Registration, RegistrationKind,
     RenderedAdminPage,

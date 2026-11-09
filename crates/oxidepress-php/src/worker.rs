@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to stop one plugin's callbacks without a restart.
+// Modified by Vabian124 on 2026-11-09 to let plugins read and write post meta.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -57,6 +57,42 @@ pub trait PhpHost: Send + Sync {
     fn delete_post(&self, id: u64, force: bool) -> Result<bool, String> {
         let _ = (id, force);
         Err("posts are not available".to_string())
+    }
+
+    /// Read post meta. An empty key returns every key for that post.
+    fn get_post_meta(&self, post_id: u64, key: &str) -> Vec<crate::posts::PostMeta> {
+        let _ = (post_id, key);
+        Vec::new()
+    }
+
+    /// Replace one meta value, or insert it when the key is new.
+    fn update_post_meta(
+        &self,
+        post_id: u64,
+        key: &str,
+        value: &str,
+        prev: &str,
+    ) -> Result<bool, String> {
+        let _ = (post_id, key, value, prev);
+        Err("post meta is not available".to_string())
+    }
+
+    /// Add another meta row. `unique` refuses a key that is already stored.
+    fn add_post_meta(
+        &self,
+        post_id: u64,
+        key: &str,
+        value: &str,
+        unique: bool,
+    ) -> Result<bool, String> {
+        let _ = (post_id, key, value, unique);
+        Err("post meta is not available".to_string())
+    }
+
+    /// Delete meta rows for one key. A previous value limits the match.
+    fn delete_post_meta(&self, post_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+        let _ = (post_id, key, prev);
+        Err("post meta is not available".to_string())
     }
 
     /// True while the host is drawing an admin screen.
@@ -839,6 +875,42 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             let force = frame.get("force").and_then(Value::as_bool).unwrap_or(false);
             Value::Bool(host.delete_post(id, force).unwrap_or(false))
         }
+        Some("get_post_meta") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            Value::Array(
+                host.get_post_meta(id, key)
+                    .into_iter()
+                    .map(|row| json!({ "key": row.key, "value": row.value }))
+                    .collect(),
+            )
+        }
+        Some("update_post_meta") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            let value = json_scalar_string(frame.get("value"));
+            let prev = json_scalar_string(frame.get("prev"));
+            Value::Bool(
+                host.update_post_meta(id, key, &value, &prev)
+                    .unwrap_or(false),
+            )
+        }
+        Some("add_post_meta") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            let value = json_scalar_string(frame.get("value"));
+            let unique = frame
+                .get("unique")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            Value::Bool(host.add_post_meta(id, key, &value, unique).unwrap_or(false))
+        }
+        Some("delete_post_meta") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            let prev = json_scalar_string(frame.get("prev"));
+            Value::Bool(host.delete_post_meta(id, key, &prev).unwrap_or(false))
+        }
         Some("is_admin") => Value::Bool(host.is_admin()),
         Some("current_user_can") => {
             let capability = frame
@@ -876,10 +948,17 @@ mod tests {
     use crate::discover::discover;
     use crate::protocol::{read_frame, write_frame};
 
+    struct StoredMeta {
+        post_id: u64,
+        key: String,
+        value: String,
+    }
+
     struct MemHost {
         options: Mutex<HashMap<String, String>>,
         http: Mutex<Vec<crate::http::HttpRequest>>,
         posts: Mutex<Vec<crate::posts::PostRecord>>,
+        meta: Mutex<Vec<StoredMeta>>,
         next_post: Mutex<u64>,
         admin: bool,
         caps: Vec<String>,
@@ -891,6 +970,7 @@ mod tests {
                 options: Mutex::new(HashMap::new()),
                 http: Mutex::new(Vec::new()),
                 posts: Mutex::new(Vec::new()),
+                meta: Mutex::new(Vec::new()),
                 next_post: Mutex::new(1),
                 admin: false,
                 caps: Vec::new(),
@@ -909,6 +989,56 @@ mod tests {
                 .lock()
                 .unwrap()
                 .insert(name.to_string(), value.to_string());
+        }
+
+        fn post_type_of(&self, id: u64) -> Result<String, String> {
+            self.posts
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|post| post.id == id)
+                .map(|post| post.post_type.clone())
+                .ok_or_else(|| "post was not found".to_string())
+        }
+
+        fn write_meta(
+            &self,
+            post_id: u64,
+            key: &str,
+            value: &str,
+            prev: &str,
+            always_insert: bool,
+        ) -> Result<bool, String> {
+            let post_type = self.post_type_of(post_id)?;
+            if !crate::posts::content_type_allowed(&post_type)
+                || !crate::posts::meta_key_allowed(key)
+            {
+                return Err("post meta is not allowed".to_string());
+            }
+            let value = crate::posts::clean_meta_value(value);
+            let mut meta = self.meta.lock().unwrap();
+            if !always_insert {
+                if let Some(row) = meta.iter_mut().find(|row| {
+                    row.post_id == post_id
+                        && row.key == key
+                        && (prev.is_empty() || row.value == prev)
+                }) {
+                    row.value = value;
+                    return Ok(true);
+                }
+                if !prev.is_empty() {
+                    return Ok(false);
+                }
+            }
+            if meta.iter().filter(|row| row.post_id == post_id).count() >= 100 {
+                return Err("too much post meta".to_string());
+            }
+            meta.push(StoredMeta {
+                post_id,
+                key: key.to_string(),
+                value,
+            });
+            Ok(true)
         }
     }
 
@@ -1012,6 +1142,68 @@ mod tests {
                 posts[index].status = "trash".to_string();
             }
             Ok(true)
+        }
+
+        fn get_post_meta(&self, post_id: u64, key: &str) -> Vec<crate::posts::PostMeta> {
+            if self.post_type_of(post_id).is_err() {
+                return Vec::new();
+            }
+            self.meta
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|row| row.post_id == post_id && (key.is_empty() || row.key == key))
+                .take(if key.is_empty() { 100 } else { 20 })
+                .map(|row| crate::posts::PostMeta {
+                    key: row.key.clone(),
+                    value: row.value.clone(),
+                })
+                .collect()
+        }
+
+        fn update_post_meta(
+            &self,
+            post_id: u64,
+            key: &str,
+            value: &str,
+            prev: &str,
+        ) -> Result<bool, String> {
+            self.write_meta(post_id, key, value, prev, false)
+        }
+
+        fn add_post_meta(
+            &self,
+            post_id: u64,
+            key: &str,
+            value: &str,
+            unique: bool,
+        ) -> Result<bool, String> {
+            if unique
+                && self
+                    .get_post_meta(post_id, key)
+                    .iter()
+                    .any(|row| row.key == key)
+            {
+                return Ok(false);
+            }
+            self.write_meta(post_id, key, value, "", true)
+        }
+
+        fn delete_post_meta(&self, post_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+            let post_type = self.post_type_of(post_id)?;
+            if !crate::posts::content_type_allowed(&post_type)
+                || !crate::posts::meta_key_allowed(key)
+            {
+                return Err("post meta is not allowed".to_string());
+            }
+            let mut meta = self.meta.lock().unwrap();
+            let before = meta.len();
+            meta.retain(|row| {
+                !(row.post_id == post_id
+                    && row.key == key
+                    && (prev.is_empty() || row.value == prev))
+            });
+            Ok(meta.len() != before)
         }
 
         fn http_request(
@@ -1617,6 +1809,71 @@ add_action('init', function () {
         let stored = host.get_post(1).unwrap();
         assert_eq!(stored.post_type, "event");
         assert_eq!(stored.title, "Updated");
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_read_and_write_post_meta() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-meta-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("meta");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("meta.php"),
+            r#"<?php
+/**
+ * Plugin Name: Meta
+ */
+add_action('init', function () {
+    $id = wp_insert_post(array(
+        'post_title' => 'Launch',
+        'post_status' => 'publish',
+        'post_type' => 'post',
+    ));
+    update_option('meta_saved', update_post_meta($id, 'city', 'Oslo') ? 'yes' : 'no');
+    update_option('meta_city', (string)get_post_meta($id, 'city', true));
+    update_option('meta_array', update_post_meta($id, 'city', array('no')) ? 'yes' : 'no');
+    update_option('meta_prev', update_post_meta($id, 'city', 'Bergen', 'missing') ? 'yes' : 'no');
+    update_option('meta_still', (string)get_post_meta($id, 'city', true));
+    add_post_meta($id, 'note', 'one', true);
+    add_post_meta($id, 'note', 'two', true);
+    $notes = get_post_meta($id, 'note', false);
+    update_option('meta_notes', is_array($notes) ? (string)count($notes) : '0');
+    $all = get_post_meta($id);
+    update_option('meta_keys', is_array($all) ? (string)count($all) : '0');
+    update_option('meta_deleted', delete_post_meta($id, 'city') ? 'yes' : 'no');
+    update_option('meta_after', (string)get_post_meta($id, 'city', true));
+    update_option('meta_missing', update_post_meta(999, 'city', 'x') ? 'yes' : 'no');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found.iter().find(|plugin| plugin.name == "Meta").unwrap();
+        runtime.load(plugin).unwrap();
+        runtime
+            .registered_post_types()
+            .expect("init runs while listing types");
+
+        assert_eq!(host.get_option("meta_saved").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("meta_city").as_deref(), Some("Oslo"));
+        assert_eq!(host.get_option("meta_array").as_deref(), Some("no"));
+        assert_eq!(host.get_option("meta_prev").as_deref(), Some("no"));
+        assert_eq!(host.get_option("meta_still").as_deref(), Some("Oslo"));
+        assert_eq!(host.get_option("meta_notes").as_deref(), Some("1"));
+        assert_eq!(host.get_option("meta_keys").as_deref(), Some("2"));
+        assert_eq!(host.get_option("meta_deleted").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("meta_after").as_deref(), Some(""));
+        assert_eq!(host.get_option("meta_missing").as_deref(), Some("no"));
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);

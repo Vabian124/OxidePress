@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to let plugins read and write posts.
+// Modified by Vabian124 on 2026-11-09 to let plugins read and write post meta.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Post rows a PHP plugin may read or write.
@@ -77,6 +77,28 @@ pub struct RegisteredPostType {
     pub public: bool,
     pub show_ui: bool,
     pub show_in_menu: bool,
+}
+
+/// One `wp_postmeta` row returned to PHP.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PostMeta {
+    pub key: String,
+    pub value: String,
+}
+
+/// A meta key a plugin may store. Empty keys and internal types are refused elsewhere.
+pub fn meta_key_allowed(key: &str) -> bool {
+    !key.is_empty() && key.len() <= 255 && !key.chars().any(|ch| ch == '\0' || ch.is_control())
+}
+
+/// Cap a meta value and drop null bytes. Tags stay, because plugins store markup here.
+pub fn clean_meta_value(raw: &str) -> String {
+    let mut value = raw.to_string();
+    if value.len() > 100_000 {
+        value.truncate(100_000);
+    }
+    value.retain(|ch| ch != '\0');
+    value
 }
 
 /// Content types a plugin may create. `post` and `page` pass. Revisions do not.
@@ -281,6 +303,10 @@ mod tests {
         assert!(!content_type_allowed("revision"));
         assert!(!content_type_allowed("wp_template"));
         assert!(!content_type_allowed("nav_menu_item"));
+        assert!(meta_key_allowed("event_city"));
+        assert!(!meta_key_allowed(""));
+        assert!(!meta_key_allowed("bad\nkey"));
+        assert_eq!(clean_meta_value("a\0b"), "ab");
         let revision = json!({"title": "Nope", "type": "revision", "status": "publish"});
         assert!(draft_from_value(Some(&revision)).is_err());
     }

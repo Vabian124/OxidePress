@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to tell the PHP worker who is signed in.
+// Modified by Vabian124 on 2026-11-09 to store plugin post meta in wp_postmeta.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -837,6 +837,170 @@ impl PhpHost for OptionHost {
             }
         })
     }
+
+    fn get_post_meta(&self, post_id: u64, key: &str) -> Vec<oxidepress_php::PostMeta> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let db = self.db.clone();
+        let key = key.to_string();
+        block_on_host(async move {
+            let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+                .one(&db)
+                .await
+                .ok()
+                .flatten()
+            else {
+                return Vec::new();
+            };
+            if !oxidepress_php::content_type_allowed(&post.post_type) {
+                return Vec::new();
+            }
+            let mut finder = oxidepress_db::entities::wp_postmeta::Entity::find()
+                .filter(oxidepress_db::entities::wp_postmeta::Column::PostId.eq(post_id));
+            if !key.is_empty() {
+                finder =
+                    finder.filter(oxidepress_db::entities::wp_postmeta::Column::MetaKey.eq(key));
+            }
+            finder
+                .all(&db)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|row| {
+                    Some(oxidepress_php::PostMeta {
+                        key: row.meta_key?,
+                        value: row.meta_value.unwrap_or_default(),
+                    })
+                })
+                .take(100)
+                .collect()
+        })
+    }
+
+    fn update_post_meta(
+        &self,
+        post_id: u64,
+        key: &str,
+        value: &str,
+        prev: &str,
+    ) -> Result<bool, String> {
+        write_post_meta(self, post_id, key, value, prev, false)
+    }
+
+    fn add_post_meta(
+        &self,
+        post_id: u64,
+        key: &str,
+        value: &str,
+        unique: bool,
+    ) -> Result<bool, String> {
+        if unique
+            && self
+                .get_post_meta(post_id, key)
+                .iter()
+                .any(|row| row.key == key)
+        {
+            return Ok(false);
+        }
+        write_post_meta(self, post_id, key, value, "", true)
+    }
+
+    fn delete_post_meta(&self, post_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        if !oxidepress_php::meta_key_allowed(key) {
+            return Err("post meta is not allowed".to_string());
+        }
+        let db = self.db.clone();
+        let key = key.to_string();
+        let prev = prev.to_string();
+        block_on_host(async move {
+            let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+                .one(&db)
+                .await
+                .map_err(|err| err.to_string())?
+            else {
+                return Err("post was not found".to_string());
+            };
+            if !oxidepress_php::content_type_allowed(&post.post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            let mut delete = oxidepress_db::entities::wp_postmeta::Entity::delete_many()
+                .filter(oxidepress_db::entities::wp_postmeta::Column::PostId.eq(post_id))
+                .filter(oxidepress_db::entities::wp_postmeta::Column::MetaKey.eq(key));
+            if !prev.is_empty() {
+                delete =
+                    delete.filter(oxidepress_db::entities::wp_postmeta::Column::MetaValue.eq(prev));
+            }
+            let result = delete.exec(&db).await.map_err(|err| err.to_string())?;
+            Ok(result.rows_affected > 0)
+        })
+    }
+}
+
+fn write_post_meta(
+    host: &OptionHost,
+    post_id: u64,
+    key: &str,
+    value: &str,
+    prev: &str,
+    always_insert: bool,
+) -> Result<bool, String> {
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    if !oxidepress_php::meta_key_allowed(key) {
+        return Err("post meta is not allowed".to_string());
+    }
+    let db = host.db.clone();
+    let key = key.to_string();
+    let value = oxidepress_php::clean_meta_value(value);
+    let prev = prev.to_string();
+    block_on_host(async move {
+        let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+            .one(&db)
+            .await
+            .map_err(|err| err.to_string())?
+        else {
+            return Err("post was not found".to_string());
+        };
+        if !oxidepress_php::content_type_allowed(&post.post_type) {
+            return Err("post type is not allowed".to_string());
+        }
+        if !always_insert {
+            let existing = oxidepress_db::entities::wp_postmeta::Entity::find()
+                .filter(oxidepress_db::entities::wp_postmeta::Column::PostId.eq(post_id))
+                .filter(oxidepress_db::entities::wp_postmeta::Column::MetaKey.eq(key.clone()))
+                .all(&db)
+                .await
+                .map_err(|err| err.to_string())?;
+            if let Some(row) = existing
+                .into_iter()
+                .find(|row| prev.is_empty() || row.meta_value.as_deref() == Some(prev.as_str()))
+            {
+                let mut active: oxidepress_db::entities::wp_postmeta::ActiveModel = row.into();
+                active.meta_value = Set(Some(value));
+                active.update(&db).await.map_err(|err| err.to_string())?;
+                return Ok(true);
+            }
+            if !prev.is_empty() {
+                return Ok(false);
+            }
+        }
+        let count = oxidepress_db::entities::wp_postmeta::Entity::find()
+            .filter(oxidepress_db::entities::wp_postmeta::Column::PostId.eq(post_id))
+            .all(&db)
+            .await
+            .map_err(|err| err.to_string())?
+            .len();
+        if count >= 100 {
+            return Err("too much post meta".to_string());
+        }
+        let row = oxidepress_db::entities::wp_postmeta::ActiveModel {
+            post_id: Set(post_id),
+            meta_key: Set(Some(key)),
+            meta_value: Set(Some(value)),
+            ..Default::default()
+        };
+        row.insert(&db).await.map_err(|err| err.to_string())?;
+        Ok(true)
+    })
 }
 
 fn stored_post(

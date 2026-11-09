@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-09 to answer is_admin and current_user_can from the host.
+// Modified by Vabian124 on 2026-11-09 to read and write post meta through the host.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -1199,6 +1199,102 @@ function get_permalink($post = 0, $leavename = false)
         return false;
     }
     return rtrim(site_url(), '/') . '/' . rawurlencode($post->post_name) . '/';
+}
+
+function oxidepress_meta_text($value)
+{
+    if (is_array($value) || is_object($value)) {
+        return null;
+    }
+    if ($value === null) {
+        return '';
+    }
+    return (string)$value;
+}
+
+function get_post_meta($post_id, $key = '', $single = false)
+{
+    $id = (int)$post_id;
+    $key = (string)$key;
+    if ($id <= 0) {
+        return $single ? '' : array();
+    }
+    $rows = oxidepress_call('get_post_meta', array(
+        'post_id' => $id,
+        'meta_key' => $key,
+    ));
+    if (!is_array($rows)) {
+        return $single ? '' : array();
+    }
+    if ($key === '') {
+        $grouped = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $name = isset($row['key']) ? (string)$row['key'] : '';
+            $grouped[$name][] = isset($row['value']) ? (string)$row['value'] : '';
+        }
+        return $grouped;
+    }
+    $values = array();
+    foreach ($rows as $row) {
+        if (is_array($row)) {
+            $values[] = isset($row['value']) ? (string)$row['value'] : '';
+        }
+    }
+    if ($single) {
+        return count($values) ? $values[0] : '';
+    }
+    return $values;
+}
+
+function update_post_meta($post_id, $meta_key, $meta_value, $prev_value = '')
+{
+    $id = (int)$post_id;
+    $key = (string)$meta_key;
+    $value = oxidepress_meta_text($meta_value);
+    $prev = oxidepress_meta_text($prev_value);
+    if ($id <= 0 || $key === '' || $value === null || $prev === null) {
+        return false;
+    }
+    return (bool)oxidepress_call('update_post_meta', array(
+        'post_id' => $id,
+        'meta_key' => $key,
+        'value' => $value,
+        'prev' => $prev,
+    ));
+}
+
+function add_post_meta($post_id, $meta_key, $meta_value, $unique = false)
+{
+    $id = (int)$post_id;
+    $key = (string)$meta_key;
+    $value = oxidepress_meta_text($meta_value);
+    if ($id <= 0 || $key === '' || $value === null) {
+        return false;
+    }
+    return (bool)oxidepress_call('add_post_meta', array(
+        'post_id' => $id,
+        'meta_key' => $key,
+        'value' => $value,
+        'unique' => (bool)$unique,
+    ));
+}
+
+function delete_post_meta($post_id, $meta_key, $meta_value = '')
+{
+    $id = (int)$post_id;
+    $key = (string)$meta_key;
+    $prev = oxidepress_meta_text($meta_value);
+    if ($id <= 0 || $key === '' || $prev === null) {
+        return false;
+    }
+    return (bool)oxidepress_call('delete_post_meta', array(
+        'post_id' => $id,
+        'meta_key' => $key,
+        'prev' => $prev,
+    ));
 }
 
 function post_type_exists($post_type)
