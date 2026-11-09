@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to run activation callbacks when a plugin is turned on.
+// Modified by Vabian124 on 2026-11-09 to drop one plugin's hooks without a restart.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! The long-lived PHP worker and the plugins it has included.
@@ -7,20 +7,21 @@
 //! callbacks are not run again. An administrator activating a PHP plugin
 //! includes it, runs `register_activation_hook`, then runs that plugin's `init`.
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use oxidepress_core::hooks::HookRegistry;
 use oxidepress_core::post_type::{PostTypeArgs, PostTypeLabels, PostTypeRegistry};
 use oxidepress_core::shortcode::ShortcodeRegistry;
-use oxidepress_php::{DiscoveredPlugin, PhpHost, PhpRuntime};
+use oxidepress_php::{DiscoveredPlugin, LoadedPlugin, PhpHost, PhpRuntime};
 use oxidepress_plugins::registry::{PluginEntry, PluginType};
 
 /// Owns the PHP process and remembers which basenames it has included.
 pub struct PhpWorkers {
     runtime: Mutex<Option<PhpRuntime>>,
-    loaded: Mutex<HashSet<String>>,
+    loaded: Mutex<HashMap<String, IncludedPlugin>>,
     plugins_dir: PathBuf,
     site_url: String,
     host: Arc<dyn PhpHost>,
@@ -34,7 +35,7 @@ impl PhpWorkers {
     ) -> Self {
         Self {
             runtime: Mutex::new(None),
-            loaded: Mutex::new(HashSet::new()),
+            loaded: Mutex::new(HashMap::new()),
             plugins_dir: plugins_dir.into(),
             site_url: site_url.into(),
             host,
@@ -169,18 +170,21 @@ impl PhpWorkers {
         if entry.file_path.is_empty() {
             return Err("PHP plugin has no file".to_string());
         }
-        let key = if entry.meta.basename.is_empty() {
-            entry.meta.name.clone()
-        } else {
-            entry.meta.basename.clone()
-        };
-        let mut loaded = self
+        let key = plugin_key(entry);
+        let loaded = self
             .loaded
             .lock()
             .map_err(|_| "plugin lock poisoned".to_string())?;
-        if !loaded.insert(key.clone()) {
+        if let Some(existing) = loaded.get(&key) {
+            if run_activation && !existing.live.load(Ordering::Relaxed) {
+                existing.live.store(true, Ordering::Relaxed);
+                let plugin = existing.plugin.clone();
+                drop(loaded);
+                return self.finish_activation(runtime, &plugin, &key);
+            }
             return Ok(());
         }
+        drop(loaded);
         let discovered = DiscoveredPlugin {
             name: entry.meta.name.clone(),
             version: entry.meta.version.clone(),
@@ -189,22 +193,65 @@ impl PhpWorkers {
             file_path: PathBuf::from(&entry.file_path),
             basename: entry.meta.basename.clone(),
         };
-        let plugin = match runtime.load(&discovered) {
-            Ok(plugin) => plugin,
-            Err(error) => {
-                loaded.remove(&key);
-                return Err(error.to_string());
-            }
-        };
-        runtime.attach(hooks, shortcodes, &plugin);
-        drop(loaded);
+        let plugin = runtime
+            .load(&discovered)
+            .map_err(|error| error.to_string())?;
+        let live = Arc::new(AtomicBool::new(true));
+        runtime.attach_while(hooks, shortcodes, &plugin, live.clone());
+        self.loaded
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?
+            .insert(
+                key.clone(),
+                IncludedPlugin {
+                    plugin: plugin.clone(),
+                    live,
+                },
+            );
         if run_activation {
-            runtime
-                .run_activation(&plugin)
-                .map_err(|error| error.to_string())?;
-            if let Err(error) = runtime.run_tag(&plugin, "init") {
-                tracing::warn!(plugin = %key, %error, "plugin init did not finish");
-            }
+            self.finish_activation(runtime, &plugin, &key)?;
+        }
+        Ok(())
+    }
+
+    /// Run the deactivation hook, then stop this plugin's callbacks.
+    ///
+    /// The worker process stays up, so the other plugins keep running.
+    pub fn deactivate(&self, entry: &PluginEntry) -> Result<(), String> {
+        if entry.meta.plugin_type != PluginType::Php {
+            return Ok(());
+        }
+        let Some(runtime) = self.runtime() else {
+            return Ok(());
+        };
+        let key = plugin_key(entry);
+        let included = self
+            .loaded
+            .lock()
+            .map_err(|_| "plugin lock poisoned".to_string())?
+            .get(&key)
+            .map(|item| (item.plugin.clone(), item.live.clone()));
+        let Some((plugin, live)) = included else {
+            return Ok(());
+        };
+        runtime
+            .run_deactivation(&plugin)
+            .map_err(|error| error.to_string())?;
+        live.store(false, Ordering::Relaxed);
+        Ok(())
+    }
+
+    fn finish_activation(
+        &self,
+        runtime: &PhpRuntime,
+        plugin: &LoadedPlugin,
+        key: &str,
+    ) -> Result<(), String> {
+        runtime
+            .run_activation(plugin)
+            .map_err(|error| error.to_string())?;
+        if let Err(error) = runtime.run_tag(plugin, "init") {
+            tracing::warn!(plugin = %key, %error, "plugin init did not finish");
         }
         Ok(())
     }
@@ -215,13 +262,22 @@ impl PhpWorkers {
         entry: &PluginEntry,
         error: &str,
     ) {
-        let name = if entry.meta.basename.is_empty() {
-            entry.meta.name.as_str()
-        } else {
-            entry.meta.basename.as_str()
-        };
-        if let Err(mark) = registry.mark_error(name, error.to_string()).await {
+        let name = plugin_key(entry);
+        if let Err(mark) = registry.mark_error(&name, error.to_string()).await {
             tracing::warn!(error = %mark, "failed to record PHP plugin error");
         }
     }
+}
+
+fn plugin_key(entry: &PluginEntry) -> String {
+    if entry.meta.basename.is_empty() {
+        entry.meta.name.clone()
+    } else {
+        entry.meta.basename.clone()
+    }
+}
+
+struct IncludedPlugin {
+    plugin: LoadedPlugin,
+    live: Arc<AtomicBool>,
 }

@@ -1,16 +1,17 @@
-// Modified by Vabian124 on 2026-11-09 to run one plugin's action tag after activation.
+// Modified by Vabian124 on 2026-11-09 to stop one plugin's callbacks without a restart.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
 //!
 //! One worker includes every active plugin. Rust registers one closure per
 //! PHP callback so hook priority stays on [`oxidepress_core::hooks::HookRegistry`].
-//! Deactivation restarts the process: that registry cannot remove a single callback.
+//! Deactivating a plugin clears the flag on its callbacks. The other plugins stay attached.
 
 use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 use serde_json::{json, Value};
@@ -222,17 +223,36 @@ impl PhpRuntime {
         shortcodes: &oxidepress_core::shortcode::ShortcodeRegistry,
         loaded: &LoadedPlugin,
     ) {
+        self.attach_while(hooks, shortcodes, loaded, Arc::new(AtomicBool::new(true)));
+    }
+
+    /// Register callbacks that stop running when `live` is set false.
+    ///
+    /// The PHP process keeps the file. Rust stops calling that plugin.
+    pub fn attach_while(
+        &self,
+        hooks: &oxidepress_core::hooks::HookRegistry,
+        shortcodes: &oxidepress_core::shortcode::ShortcodeRegistry,
+        loaded: &LoadedPlugin,
+        live: Arc<AtomicBool>,
+    ) {
         for reg in &loaded.registrations {
             let runtime = self.clone();
             let callback_id = reg.callback_id;
             let tag = reg.tag.clone();
+            let live = live.clone();
             match reg.kind {
                 RegistrationKind::Action => {
                     hooks.add_action(
                         &reg.tag,
-                        Arc::new(move |args| match runtime.invoke_action(callback_id, args) {
-                            Ok(output) => runtime.push_output(&tag, &output),
-                            Err(err) => runtime.note_error(err.to_string()),
+                        Arc::new(move |args| {
+                            if !live.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            match runtime.invoke_action(callback_id, args) {
+                                Ok(output) => runtime.push_output(&tag, &output),
+                                Err(err) => runtime.note_error(err.to_string()),
+                            }
                         }),
                         reg.priority,
                     );
@@ -241,6 +261,9 @@ impl PhpRuntime {
                     hooks.add_filter(
                         &reg.tag,
                         Arc::new(move |value| {
+                            if !live.load(Ordering::Relaxed) {
+                                return value;
+                            }
                             match runtime.invoke_filter(callback_id, value.clone()) {
                                 Ok((next, output)) => {
                                     runtime.push_output(&tag, &output);
@@ -259,6 +282,9 @@ impl PhpRuntime {
                     shortcodes.add_shortcode(
                         &reg.tag,
                         Arc::new(move |attrs, content| {
+                            if !live.load(Ordering::Relaxed) {
+                                return String::new();
+                            }
                             match runtime.invoke_shortcode(callback_id, &tag, attrs, content) {
                                 Ok((rendered, output)) => {
                                     runtime.push_output(&tag, &output);
@@ -1730,6 +1756,51 @@ add_action('init', function () {
         assert_eq!(host.get_option("cap_admin").as_deref(), Some("yes"));
         assert_eq!(host.get_option("cap_edit").as_deref(), Some("yes"));
         assert_eq!(host.get_option("cap_manage").as_deref(), Some("no"));
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_one_plugin_can_stop_while_the_other_keeps_filtering() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-stop-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        for (dir, body) in [
+            (
+                "alpha",
+                "function alpha_filter($content) { return $content . 'A'; }\nadd_filter('the_content', 'alpha_filter');\n",
+            ),
+            (
+                "beta",
+                "function beta_filter($content) { return $content . 'B'; }\nadd_filter('the_content', 'beta_filter');\n",
+            ),
+        ] {
+            let plugin_dir = plugins.join(dir);
+            std::fs::create_dir_all(&plugin_dir).unwrap();
+            std::fs::write(
+                plugin_dir.join(format!("{dir}.php")),
+                format!("<?php\n/**\n * Plugin Name: {dir}\n */\n{body}"),
+            )
+            .unwrap();
+        }
+
+        let host = Arc::new(MemHost::new());
+        let runtime = PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host).unwrap();
+        let found = discover(&plugins).unwrap();
+        let alpha = found.iter().find(|plugin| plugin.name == "alpha").unwrap();
+        let beta = found.iter().find(|plugin| plugin.name == "beta").unwrap();
+        let alpha_loaded = runtime.load(alpha).unwrap();
+        let beta_loaded = runtime.load(beta).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        let alpha_live = Arc::new(std::sync::atomic::AtomicBool::new(true));
+        runtime.attach_while(&hooks, &shortcodes, &alpha_loaded, alpha_live.clone());
+        runtime.attach(&hooks, &shortcodes, &beta_loaded);
+        assert_eq!(hooks.apply_filters("the_content", json!("x")), json!("xAB"));
+        alpha_live.store(false, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(hooks.apply_filters("the_content", json!("x")), json!("xB"));
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);
     }

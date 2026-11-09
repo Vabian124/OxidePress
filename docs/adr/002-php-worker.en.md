@@ -67,7 +67,7 @@ What the worker does:
 What it does not do:
 
 - When plugins live in `wp-content/plugins`, `ABSPATH` is the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored.
-- Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
+- Deactivating one plugin stops its hooks and shortcodes and leaves the others running. Turning it back on uses the copy already in the worker.
 - `oxidepress-admin` stores the WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - `wp_enqueue_style` prints a `link` tag in `wp_head`. `wp_enqueue_script` prints a `script` tag in `wp_head`, or in `wp_footer` when the script is marked for the footer. The worker runs `wp_enqueue_scripts` once before the first of those prints when the host has not already fired it.
 - An administrator opens a plugin page registered with `add_menu_page`, `add_options_page`, or `add_submenu_page` at `/wp-admin/admin.php?page={slug}`. The worker runs `admin_menu` once, then prints that page callback. `register_setting` options posted to `/wp-admin/options.php` are saved for that group only. `siteurl`, `home`, `active_plugins`, `template`, `stylesheet`, `wp_user_roles`, `users_can_register`, `default_role`, salts, and `rustpress_*` keys are refused even if a plugin registers them. A post type registered on `init` is stored in `wp_posts`. An administrator lists and edits it at `/wp-admin/edit.php?post_type={name}`. `get_permalink` is `/{slug}/`. Revisions and template types are refused. The block editor stays on posts and pages.

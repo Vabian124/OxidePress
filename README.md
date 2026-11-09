@@ -32,7 +32,7 @@ The probe on 2026-11-07 (PHP 8.3.36) is [crates/oxidepress-php/REAL-PLUGINS.md](
 ## What a dropped-in plugin cannot do
 
 - `ABSPATH` is the directory that contains `wp-content` when plugins live in `wp-content/plugins`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. It is not the plugins directory, and this tree does not vendor `wp-admin` or `wp-includes`.
-- Deactivating one plugin needs a process restart. The hook registry cannot drop one callback.
+- Deactivating one plugin stops its hooks and shortcodes and leaves the others running. Turning it back on uses the copy already in the worker.
 - Activating a plugin stores its WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when the script asks for the footer. An administrator opens a plugin settings page at `/wp-admin/admin.php?page={slug}`. Options that page registered are saved at `/wp-admin/options.php`. `siteurl`, `active_plugins`, role options, salts, and `rustpress_*` keys are refused.
 - A plugin that registers a post type on `init` can store, read, update, and delete those rows. An administrator lists and edits them at `/wp-admin/edit.php?post_type={name}`. The public address is `/{slug}/`. Revisions and template types are refused. The block editor stays on posts and pages.

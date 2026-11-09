@@ -23,7 +23,7 @@ pub fn create_admin_routes(state: &Arc<AppState>) -> Router {
                 app.php_runtime
                     .activate(&entry, &app.hooks, &app.shortcodes, &app.post_types)
             }
-            oxidepress_admin::PluginChange::Deactivated => Ok(()),
+            oxidepress_admin::PluginChange::Deactivated => app.php_runtime.deactivate(&entry),
         })),
     };
 

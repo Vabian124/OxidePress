@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, run its activation hook once, and see the signed-in role. What remains is the worker limits in open.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, run its activation hook once, see the signed-in role, and be deactivated without stopping the others. What remains is the block editor for those types, then the later items.",
   "done": [
     {
       "id": "single-site-plan",
@@ -80,20 +80,19 @@
       "status": "done",
       "crate": "oxidepress-server",
       "note": "A visitor is false. manage_options stays true while a plugin settings page is drawn."
+    },
+    {
+      "id": "deactivate-one-plugin",
+      "title": "Deactivate one plugin without restarting the worker",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "That plugin's hooks and shortcodes stop. The others keep running. Turning it back on reuses the loaded copy."
     }
   ],
   "open": [
     {
-      "id": "deactivate-one-plugin",
-      "order": 1,
-      "title": "Deactivate one plugin without restarting the worker",
-      "status": "open",
-      "crate": "oxidepress-php",
-      "acceptance": "Removing one plugin drops its hooks and shortcodes and leaves the others running."
-    },
-    {
       "id": "custom-type-block-editor",
-      "order": 2,
+      "order": 1,
       "title": "Edit a plugin post type in the block editor",
       "status": "open",
       "crate": "oxidepress-server",
