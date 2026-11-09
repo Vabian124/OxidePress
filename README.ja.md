@@ -10,7 +10,7 @@
 
 OxidePress は、WordPress のデータベースを Rust のバイナリから配信する。このツリーのテーマは Tera テーマである。PHP テーマは動かない。置いた PHP プラグインは、1 つのワーカーで起動し、フックと head/footer の echo を足すことができる。それは部分的な動作である。WordPress ではない。保存された SEO、フィールド、フォーム、セキュリティ、ショップの行を扱う経路は、ネイティブの画面のままである。すべてのプラグインを AI で変換することは、今のランタイムではない。[`oxidepress-rustify`](crates/oxidepress-rustify) は、後から使う骨格として残してよい。
 
-WordPress 7.1.4 に対するスキーマと動作の記録は [docs/compatibility-plan.md](docs/compatibility-plan.md)（2026-11-07 確認）。その日のローカルサイトの状態は [docs/alpha-status.md](docs/alpha-status.md)。
+WordPress 7.1.4 に対するスキーマと動作の記録は [docs/compatibility-plan.md](docs/compatibility-plan.md)。残りの作業は [docs/TODO.md](docs/TODO.md) で、同じ一覧が [docs/progress.json](docs/progress.json) にある。2026-11-07 のローカルサイトの状態は [docs/alpha-status.md](docs/alpha-status.md)。
 
 ## プラグインの二つの経路
 
@@ -36,7 +36,7 @@ PHP ランタイムは、長く生きるシステム `php` CLI ワーカーが�
 - プラグインを有効化すると、スラッシュを含む WordPress の basename を保存する。basename が無いプラグインは表示名を保存する。復元はどちらの形も受け付ける。
 - `wp_enqueue_style` は `wp_head` に出力する。`wp_enqueue_script` は `wp_head` に出力し、フッター指定のスクリプトは `wp_footer` に出力する。管理者は `/wp-admin/admin.php?page={slug}` でプラグインの設定画面を開く。その画面が登録したオプションは `/wp-admin/options.php` に保存する。`siteurl`、`active_plugins`、権限オプション、ソルト、`rustpress_*` キーは拒否する。
 - `init` で投稿タイプを登録したプラグインは、その行を保存し、読み、更新し、削除できる。管理者は `/wp-admin/edit.php?post_type={name}` で一覧と編集を行う。公開アドレスは `/{slug}/` である。リビジョンとテンプレートのタイプは拒否する。ブロックエディタは投稿と固定ページのままである。
-- `is_admin()` と `current_user_can()` はその設定画面の描画と保存の間だけ true。`is_multisite()` は false。有効化コールバックは読み込み時には走らない。
+- `is_admin()` と `current_user_can()` はその設定画面の描画と保存の間だけ true。`is_multisite()` は false。`register_activation_hook` は、管理者がそのプラグインを有効化したときに一度だけ走る。起動のたびに再実行はしない。
 - `wp_remote_get` と `wp_remote_post` は、公開された HTTP と HTTPS に届く。プライベートアドレス、内部ホスト名、それ以外のスキームは拒否する。リダイレクトは追わない。
 - `ABSPATH . 'wp-includes/version.php'` が無いとき、Health Check はいまも警告する。`ABSPATH . 'wp-admin/includes/file.php'` が無いとき、Contact Form 7 はいまも止まる。
 

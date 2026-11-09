@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-08 to store a plugin basename that contains a slash.
+// Modified by Vabian124 on 2026-11-09 to boot a plugin when an administrator activates it.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -9,7 +9,7 @@ use axum::{
 };
 use serde::Serialize;
 
-use crate::AdminState;
+use crate::{AdminState, PluginChange};
 
 #[derive(Debug, Serialize)]
 pub struct PluginActionResponse {
@@ -30,14 +30,14 @@ async fn plugin_action_route(
     Path(path): Path<String>,
 ) -> Result<Json<PluginActionResponse>, (StatusCode, String)> {
     let (name, action) = plugin_action(&path).map_err(|error| (StatusCode::NOT_FOUND, error))?;
-    let (status, verb) = match action {
+    let (status, verb, change) = match action {
         PluginVerb::Activate => {
             state
                 .plugin_registry
                 .activate(&name)
                 .await
                 .map_err(|error| (StatusCode::NOT_FOUND, error))?;
-            ("Active", "activated")
+            ("Active", "activated", PluginChange::Activated)
         }
         PluginVerb::Deactivate => {
             state
@@ -45,9 +45,17 @@ async fn plugin_action_route(
                 .deactivate(&name)
                 .await
                 .map_err(|error| (StatusCode::NOT_FOUND, error))?;
-            ("Inactive", "deactivated")
+            ("Inactive", "deactivated", PluginChange::Deactivated)
         }
     };
+    if let Some(hook) = &state.plugin_lifecycle {
+        if let Some(entry) = plugin_entry(&state, &name).await {
+            if let Err(error) = hook(entry, change) {
+                let _ = state.plugin_registry.mark_error(&name, error.clone()).await;
+                return Err((StatusCode::INTERNAL_SERVER_ERROR, error));
+            }
+        }
+    }
     persist_active_plugins(&state).await;
 
     Ok(Json(PluginActionResponse {
@@ -77,6 +85,22 @@ fn plugin_action(path: &str) -> Result<(String, PluginVerb), String> {
         other => return Err(format!("unknown plugin action '{other}'")),
     };
     Ok((name.to_string(), action))
+}
+
+async fn plugin_entry(
+    state: &AdminState,
+    name: &str,
+) -> Option<oxidepress_plugins::registry::PluginEntry> {
+    state
+        .plugin_registry
+        .list()
+        .await
+        .into_iter()
+        .find(|entry| {
+            entry.meta.name == name
+                || entry.meta.basename == name
+                || stored_plugin_id(entry) == name
+        })
 }
 
 fn stored_plugin_id(entry: &oxidepress_plugins::registry::PluginEntry) -> String {

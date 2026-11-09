@@ -45,7 +45,7 @@ Each code item names one crate. A docs item says `docs`. Finish that item before
 - Approving, holding, spamming, trashing, or deleting a comment rewrites the post’s stored comment count to the approved rows.
 - `/shop/`, `/cart/`, `/checkout/`, and `/shop/product/{id}/` serve the same pages as the links without a trailing slash. `/product/{slug}/` is the product permalink. It shows the stored sale price, SKU, and stock, and Add to cart puts that product in the cart.
 
-## Worker limits, checked 2026-11-07
+## Worker limits, checked 2026-11-09
 
 `ABSPATH` follows the install layout. Plugins in `wp-content/plugins` use the directory that contains `wp-content`. An ancestor with `wp-load.php` is used otherwise. If neither exists, `ABSPATH` is the parent of the plugins directory. `wp-admin` and `wp-includes` are not vendored, so a missing `version.php` or `wp-admin/includes/file.php` still fails the same way.
 
@@ -55,13 +55,13 @@ These are still true:
 
 - `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when marked for the footer. An administrator opens a plugin settings page at `/wp-admin/admin.php?page={slug}`. Registered options save at `/wp-admin/options.php`. `siteurl`, `active_plugins`, role options, salts, and `rustpress_*` keys are refused.
 - A plugin that registers a post type on `init` stores rows with `wp_insert_post`, `get_post`, `get_posts`, `wp_update_post`, and `wp_delete_post`. An administrator lists and edits that type at `/wp-admin/edit.php?post_type={name}`. The public permalink is `/{slug}/`. Revisions and template types are refused. The block editor stays on posts and pages.
-- Deactivating one plugin needs a process restart. `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. Activation callbacks are not run on load.
+- Deactivating one plugin needs a process restart. `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. `register_activation_hook` runs once when an administrator activates that plugin. It does not run again on boot.
 
 `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS. Private addresses, internal hostnames, and other schemes are refused before a socket opens. Redirects are not followed. A response body larger than 1 MiB is refused. This is the class of call Akismet's spam API makes. It does not vendor `wp-admin/includes/file.php`.
 
 ## Next, in order
 
-The numbered items in this plan are done. What remains is listed under the worker limits above.
+The numbered items in this plan are done. The remaining work, in order, is [TODO.md](TODO.md). [progress.json](progress.json) is the same list for a program. What is already true is listed under the worker limits above.
 
 ## Not this plan
 

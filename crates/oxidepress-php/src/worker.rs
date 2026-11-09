@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to let plugins register post types and store posts.
+// Modified by Vabian124 on 2026-11-09 to run one plugin's action tag after activation.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -274,6 +274,20 @@ impl PhpRuntime {
     /// Run `register_deactivation_hook` callbacks for one loaded plugin.
     pub fn run_deactivation(&self, loaded: &LoadedPlugin) -> Result<(), PhpError> {
         self.run_lifecycle(loaded, RegistrationKind::Deactivation, "deactivate")
+    }
+
+    /// Run this plugin's action callbacks for one tag.
+    ///
+    /// Used when a plugin is activated after startup, so its `init` callbacks
+    /// run once without firing `init` again for plugins already loaded.
+    pub fn run_tag(&self, loaded: &LoadedPlugin, tag: &str) -> Result<(), PhpError> {
+        for reg in &loaded.registrations {
+            if reg.kind == RegistrationKind::Action && reg.tag == tag {
+                let output = self.invoke_action(reg.callback_id, &Value::Null)?;
+                self.push_output(tag, &output);
+            }
+        }
+        Ok(())
     }
 
     /// Menu pages plugins registered, after `admin_menu` has run once.
@@ -1142,6 +1156,7 @@ mod tests {
         hooks.do_action("init", &json!({}));
         assert_eq!(runtime.take_output("init"), "ready");
         assert_eq!(host.get_option("notice_seen").as_deref(), Some("yes"));
+        assert!(host.get_option("notice_activated").is_none());
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
 
         runtime.run_activation(&loaded).unwrap();

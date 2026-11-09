@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to keep plugin post types on the application state.
+// Modified by Vabian124 on 2026-11-09 to keep the PHP worker replaceable after startup.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::collections::HashMap;
@@ -66,9 +66,9 @@ pub struct AppState {
     pub audit_log: Arc<AuditLog>,
     // WASM plugin host
     pub wasm_host: Arc<RwLock<WasmHost>>,
-    /// Long-lived PHP worker for dropped-in plugins. Absent when none are active
-    /// or when `php` is not installed.
-    pub php_runtime: Option<oxidepress_php::PhpRuntime>,
+    /// Long-lived PHP worker for dropped-in plugins. The process is absent until
+    /// an active PHP plugin is included or an administrator activates one.
+    pub php_runtime: Arc<crate::php_plugins::PhpWorkers>,
     /// Built-in post types plus any a PHP plugin registered on `init`.
     pub post_types: PostTypeRegistry,
     // Multisite support

@@ -10,7 +10,7 @@ Independent fork of [RustPress](https://github.com/LegacyToRustProject/RustPress
 
 OxidePress serves a WordPress database from a Rust binary. Themes in this tree are Tera themes. PHP themes do not run. A dropped-in PHP plugin can boot in one worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. The native screens remain the path for stored SEO, fields, forms, security, and shop rows. Full AI conversion of every plugin is not the current runtime. [`oxidepress-rustify`](crates/oxidepress-rustify) may stay as a later skeleton.
 
-The schema and behavior record against WordPress 7.1.4 is [docs/compatibility-plan.md](docs/compatibility-plan.md), checked 2026-11-07. What the local site was doing that day is [docs/alpha-status.md](docs/alpha-status.md).
+The schema and behavior record against WordPress 7.1.4 is [docs/compatibility-plan.md](docs/compatibility-plan.md). Remaining work is [docs/TODO.md](docs/TODO.md), and the same list is [docs/progress.json](docs/progress.json). What the local site was doing on 2026-11-07 is [docs/alpha-status.md](docs/alpha-status.md).
 
 ## Two plugin paths
 
@@ -36,7 +36,7 @@ The probe on 2026-11-07 (PHP 8.3.36) is [crates/oxidepress-php/REAL-PLUGINS.md](
 - Activating a plugin stores its WordPress basename, including one that contains a slash. A plugin without a basename stores its display name. Restore accepts either form.
 - `wp_enqueue_style` prints in `wp_head`. `wp_enqueue_script` prints in `wp_head`, or in `wp_footer` when the script asks for the footer. An administrator opens a plugin settings page at `/wp-admin/admin.php?page={slug}`. Options that page registered are saved at `/wp-admin/options.php`. `siteurl`, `active_plugins`, role options, salts, and `rustpress_*` keys are refused.
 - A plugin that registers a post type on `init` can store, read, update, and delete those rows. An administrator lists and edits them at `/wp-admin/edit.php?post_type={name}`. The public address is `/{slug}/`. Revisions and template types are refused. The block editor stays on posts and pages.
-- `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. Activation callbacks are not run on load.
+- `is_admin()` and `current_user_can()` are true only while that settings page is drawn or saved. `is_multisite()` is false. `register_activation_hook` runs once when an administrator activates that plugin. It does not run again on boot.
 - `wp_remote_get` and `wp_remote_post` reach public HTTP and HTTPS. Private addresses, internal hostnames, and other schemes are refused. Redirects are not followed.
 - Health Check still warns when `ABSPATH . 'wp-includes/version.php'` is missing. Contact Form 7 still stops when `ABSPATH . 'wp-admin/includes/file.php'` is missing.
 

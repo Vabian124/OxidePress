@@ -143,7 +143,7 @@ async fn build_base_context(state: &AppState) -> tera::Context {
         "wp_footer",
         &serde_json::json!({"site_url": &state.site_url}),
     );
-    if let Some(runtime) = &state.php_runtime {
+    if let Some(runtime) = state.php_runtime.runtime() {
         wp_head_html.push_str(&runtime.take_output("wp_head"));
         wp_footer_html.push_str(&runtime.take_output("wp_footer"));
     }

@@ -27,7 +27,7 @@ pub struct PluginPageQuery {
 
 /// Pages for the admin menu. An empty list means no PHP worker or no pages.
 pub fn menu_items(state: &AppState) -> Vec<Value> {
-    let Some(runtime) = &state.php_runtime else {
+    let Some(runtime) = state.php_runtime.runtime() else {
         return Vec::new();
     };
     match runtime.admin_pages() {
@@ -73,7 +73,7 @@ pub async fn plugin_page(
     let nonce = state.nonces.create_nonce("php_options", session.user_id);
     match state
         .php_runtime
-        .as_ref()
+        .runtime()
         .and_then(|runtime| runtime.render_admin_page(&slug, &nonce).ok())
     {
         Some(page) => {
@@ -104,7 +104,7 @@ pub async fn plugin_options_save(
 
     let group = form.get("option_page").cloned().unwrap_or_default();
     let page = form.get("oxidepress_page").cloned().unwrap_or_default();
-    let saved_any = state.php_runtime.as_ref().and_then(|runtime| {
+    let saved_any = state.php_runtime.runtime().and_then(|runtime| {
         runtime
             .save_admin_settings(&group, &form)
             .ok()

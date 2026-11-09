@@ -1,0 +1,37 @@
+# OxidePress TODO
+
+Updated 2026-11-09. The behavior record is [compatibility-plan.md](compatibility-plan.md). Machine-readable status is [progress.json](progress.json). The local site note is [alpha-status.md](alpha-status.md).
+
+The numbered single-site plan is done. Take the open items in order. One item, one crate, then update both this file and `progress.json`.
+
+## Open
+
+1. **`is_admin()` and `current_user_can()` follow the real admin request.** `oxidepress-php`, with the request identity from `oxidepress-server`. Today both are true only while a plugin settings page is drawn or saved. A visitor stays false. A signed-in user is true only for a capability that account has.
+2. **Deactivate one plugin without restarting the worker.** `oxidepress-php`. Deactivation still restarts the process because the hook registry cannot drop one callback. Removing one plugin should drop its hooks and shortcodes and leave the others running.
+3. **Edit a plugin post type in the block editor.** `oxidepress-server`. The list and the classic form exist at `/wp-admin/edit.php?post_type={name}`. The block editor stays on posts and pages. A `show_ui` type should open in that editor and still be unable to switch the row to a refused type.
+
+## Later
+
+These are not in the numbered plan. Do the open items first.
+
+- `get_post_meta` and `update_post_meta` for a dropped-in plugin. `oxidepress-php`.
+- `register_taxonomy` with a list screen. `oxidepress-php`.
+
+## Out of plan
+
+- Multisite tables and the extra `wp_users` columns `spam` and `deleted`.
+- Vendoring `wp-admin` or `wp-includes`, or stubbing `wp-admin/includes/file.php`.
+- WooCommerce lookup tables, variations, coupons, shipping rates, tax, and payment gateways.
+- Elementor and Jetpack.
+
+## Done
+
+- Single-site tables, core blocks, theme, comments, archives, SEO, fields, forms, security, and the shop slice. [compatibility-plan.md](compatibility-plan.md).
+- One PHP worker: hooks, shortcodes, head and footer echo. [ADR-002](adr/002-php-worker.en.md).
+- `ABSPATH` follows the install layout. `51aa88b`.
+- A plugin basename may contain a slash. `bed2158`.
+- `wp_remote_get` and `wp_remote_post` reach public HTTP and refuse private addresses. `557af24`.
+- Enqueued styles and scripts print. `f78e4c8`.
+- Plugin settings pages save registered options and refuse protected keys. `9f32b31`.
+- A plugin post type stores rows. An administrator lists and edits them. The public address is `/{slug}/`. Revisions and template types are refused. `321fb88`.
+- `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.

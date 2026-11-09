@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to store plugin post types and let the worker write posts.
+// Modified by Vabian124 on 2026-11-09 to run plugin activation callbacks from the admin.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -16,6 +16,7 @@ pub mod i18n;
 pub mod media;
 pub mod middleware;
 pub mod nav_menu;
+mod php_plugins;
 mod routes;
 mod state;
 mod templates;
@@ -31,7 +32,7 @@ use oxidepress_cron::CronManager;
 use oxidepress_db::{connection, options::OptionsManager};
 use oxidepress_fields::{FieldGroupRegistry, FieldStorage};
 use oxidepress_forms::SubmissionStore;
-use oxidepress_php::{DiscoveredPlugin, PhpHost, PhpRuntime};
+use oxidepress_php::PhpHost;
 use oxidepress_plugins::{PluginLoader, PluginRegistry, WasmHost};
 use oxidepress_security::{AuditLog, LoginProtection, RateLimiter, WafEngine};
 
@@ -224,50 +225,21 @@ async fn main() -> Result<()> {
     register_contact_form_shortcode(&shortcodes, contact_forms.clone());
     info!("shortcode registry initialized with built-in shortcodes");
 
-    let php_runtime = load_php_plugins(
+    let php_host = Arc::new(OptionHost {
+        options: options.clone(),
+        db: db.clone(),
+    });
+    let php_runtime = Arc::new(php_plugins::PhpWorkers::new(
         &config.plugins_dir,
         &site_url,
-        &options,
-        &db,
-        &plugin_registry,
-        &hooks,
-        &shortcodes,
-    )
-    .await;
+        php_host,
+    ));
+    php_runtime
+        .boot(&plugin_registry, &hooks, &shortcodes)
+        .await;
     let post_types = oxidepress_core::PostTypeRegistry::new();
-    if let Some(runtime) = &php_runtime {
-        match runtime.registered_post_types() {
-            Ok(types) => {
-                for kind in types {
-                    if post_types
-                        .get(&kind.name)
-                        .is_some_and(|existing| existing.builtin)
-                    {
-                        continue;
-                    }
-                    post_types.register(
-                        &kind.name,
-                        oxidepress_core::post_type::PostTypeArgs {
-                            label: kind.label.clone(),
-                            labels: oxidepress_core::post_type::PostTypeLabels {
-                                name: kind.label,
-                                singular_name: kind.singular,
-                                ..Default::default()
-                            },
-                            public: kind.public,
-                            show_ui: kind.show_ui,
-                            show_in_menu: kind.show_in_menu,
-                            show_in_rest: kind.show_ui,
-                            ..Default::default()
-                        },
-                        false,
-                    );
-                }
-            }
-            Err(error) => {
-                tracing::warn!(%error, "PHP post types were not loaded");
-            }
-        }
+    if let Some(runtime) = php_runtime.runtime() {
+        php_runtime.adopt_post_types(&runtime, &post_types);
     }
 
     // Initialize cron system (before AppState so it can be stored in state)
@@ -673,82 +645,6 @@ async fn main() -> Result<()> {
     .await?;
 
     Ok(())
-}
-
-async fn load_php_plugins(
-    plugins_dir: &str,
-    site_url: &str,
-    options: &oxidepress_db::options::OptionsManager,
-    db: &sea_orm::DatabaseConnection,
-    registry: &oxidepress_plugins::PluginRegistry,
-    hooks: &HookRegistry,
-    shortcodes: &oxidepress_core::shortcode::ShortcodeRegistry,
-) -> Option<PhpRuntime> {
-    let active: Vec<_> = registry
-        .active_plugins()
-        .await
-        .into_iter()
-        .filter(|entry| entry.meta.plugin_type == oxidepress_plugins::registry::PluginType::Php)
-        .collect();
-    if active.is_empty() {
-        return None;
-    }
-
-    let host = Arc::new(OptionHost {
-        options: options.clone(),
-        db: db.clone(),
-    });
-    let php = std::env::var_os("OXIDEPRESS_PHP")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::PathBuf::from("php"));
-    let runtime = match PhpRuntime::spawn_php(
-        php,
-        Some(std::path::Path::new(plugins_dir)),
-        Some(site_url),
-        host,
-    ) {
-        Ok(runtime) => runtime,
-        Err(error) => {
-            tracing::warn!(error = %error, "PHP plugin worker did not start");
-            for entry in &active {
-                if let Err(mark) = registry
-                    .mark_error(&entry.meta.basename, error.to_string())
-                    .await
-                {
-                    tracing::warn!(error = %mark, "failed to record PHP plugin error");
-                }
-            }
-            return None;
-        }
-    };
-
-    for entry in active {
-        let discovered = DiscoveredPlugin {
-            name: entry.meta.name.clone(),
-            version: entry.meta.version.clone(),
-            description: entry.meta.description.clone(),
-            author: entry.meta.author.clone(),
-            file_path: std::path::PathBuf::from(&entry.file_path),
-            basename: entry.meta.basename.clone(),
-        };
-        match runtime.load(&discovered) {
-            Ok(loaded) => runtime.attach(hooks, shortcodes, &loaded),
-            Err(error) => {
-                tracing::warn!(
-                    plugin = %entry.meta.basename,
-                    error = %error,
-                    "PHP plugin failed to load"
-                );
-                if let Err(mark) = registry
-                    .mark_error(&entry.meta.basename, error.to_string())
-                    .await
-                {
-                    tracing::warn!(error = %mark, "failed to record PHP plugin error");
-                }
-            }
-        }
-    }
-    Some(runtime)
 }
 
 struct OptionHost {

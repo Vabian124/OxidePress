@@ -1,0 +1,143 @@
+{
+  "updated": "2026-11-09",
+  "commit": "321fb88",
+  "wordpress": "7.1.4",
+  "db_version": 61833,
+  "plan": "docs/compatibility-plan.md",
+  "status_note": "docs/alpha-status.md",
+  "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
+  "decision": "docs/adr/002-php-worker.en.md",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, and run its activation hook once when an administrator turns it on. What remains is the worker limits in open.",
+  "done": [
+    {
+      "id": "single-site-plan",
+      "title": "WordPress 7.1.4 single-site behavior in the numbered plan",
+      "status": "done",
+      "crate": "docs",
+      "note": "Schema, core blocks, theme, comments, archives, SEO, fields, forms, security, and the shop slice. See compatibility-plan.md."
+    },
+    {
+      "id": "php-worker",
+      "title": "One PHP CLI worker for drop-in plugins",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "Hooks, shortcodes, and wp_head and wp_footer echo. ADR-002."
+    },
+    {
+      "id": "abspath",
+      "title": "ABSPATH follows the install layout",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "51aa88b"
+    },
+    {
+      "id": "plugin-basename",
+      "title": "Store a plugin basename that contains a slash",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "bed2158"
+    },
+    {
+      "id": "worker-http",
+      "title": "wp_remote_get and wp_remote_post for public HTTP",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "557af24"
+    },
+    {
+      "id": "enqueue",
+      "title": "Print enqueued scripts and styles",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "f78e4c8"
+    },
+    {
+      "id": "plugin-settings",
+      "title": "Draw plugin settings pages and save registered options",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "9f32b31",
+      "note": "siteurl, active_plugins, role options, salts, and rustpress_* keys stay refused."
+    },
+    {
+      "id": "custom-post-types",
+      "title": "Register a post type and store its rows",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "commit": "321fb88",
+      "note": "Admin list and classic editor at /wp-admin/edit.php?post_type={name}. Public permalink is /{slug}/. Revisions and template types are refused. The block editor stays on posts and pages."
+    },
+    {
+      "id": "activation-callbacks",
+      "title": "Run activation callbacks when an administrator activates a plugin",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "Boot includes active plugins and does not run the hook again."
+    }
+  ],
+  "open": [
+    {
+      "id": "admin-capabilities",
+      "order": 1,
+      "title": "is_admin and current_user_can follow the real admin request",
+      "status": "open",
+      "crate": "oxidepress-php",
+      "also": ["oxidepress-server"],
+      "acceptance": "They are true on an authenticated admin request for a capability that user has, and false for a visitor and for a capability that user lacks. The settings-page window is no longer the only case."
+    },
+    {
+      "id": "deactivate-one-plugin",
+      "order": 2,
+      "title": "Deactivate one plugin without restarting the worker",
+      "status": "open",
+      "crate": "oxidepress-php",
+      "acceptance": "Removing one plugin drops its hooks and shortcodes and leaves the others running."
+    },
+    {
+      "id": "custom-type-block-editor",
+      "order": 3,
+      "title": "Edit a plugin post type in the block editor",
+      "status": "open",
+      "crate": "oxidepress-server",
+      "acceptance": "A show_ui type opened from the admin uses the block editor and still cannot switch the row to a refused type."
+    }
+  ],
+  "later": [
+    {
+      "id": "post-meta",
+      "title": "get_post_meta and update_post_meta for a dropped-in plugin",
+      "status": "later",
+      "crate": "oxidepress-php",
+      "note": "Not in the numbered plan. Do the open items first."
+    },
+    {
+      "id": "taxonomies",
+      "title": "register_taxonomy with a list screen",
+      "status": "later",
+      "crate": "oxidepress-php",
+      "note": "Not in the numbered plan. Do the open items first."
+    }
+  ],
+  "out_of_plan": [
+    {
+      "id": "multisite",
+      "title": "Multisite tables and wp_users.spam and wp_users.deleted",
+      "status": "out_of_plan"
+    },
+    {
+      "id": "vendor-core",
+      "title": "Vendoring wp-admin or wp-includes, or stubbing wp-admin/includes/file.php",
+      "status": "out_of_plan"
+    },
+    {
+      "id": "woo-remainder",
+      "title": "WooCommerce lookup tables, variations, coupons, shipping rates, tax, and payment gateways",
+      "status": "out_of_plan"
+    },
+    {
+      "id": "elementor-jetpack",
+      "title": "Elementor and Jetpack",
+      "status": "out_of_plan"
+    }
+  ]
+}
