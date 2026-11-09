@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to run plugin activation callbacks from the admin.
+// Modified by Vabian124 on 2026-11-09 to tell the PHP worker who is signed in.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -596,6 +596,10 @@ async fn main() -> Result<()> {
     // 5. Security headers — defense-in-depth headers
     // 6. ETag + compression — performance
     app = app
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            middleware::bind_visitor,
+        ))
         .layer(axum::middleware::from_fn(middleware::block_sensitive_files))
         .layer(axum::middleware::from_fn_with_state(
             state.clone(),
@@ -653,6 +657,18 @@ struct OptionHost {
 }
 
 impl PhpHost for OptionHost {
+    fn is_admin(&self) -> bool {
+        crate::middleware::VISITOR
+            .try_with(|visitor| visitor.admin)
+            .unwrap_or(false)
+    }
+
+    fn user_can(&self, capability: &str) -> bool {
+        crate::middleware::VISITOR
+            .try_with(|visitor| visitor.allows(capability))
+            .unwrap_or(false)
+    }
+
     fn get_option(&self, name: &str) -> Option<String> {
         let options = self.options.clone();
         let name = name.to_string();

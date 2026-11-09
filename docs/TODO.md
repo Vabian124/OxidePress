@@ -6,9 +6,8 @@ The numbered single-site plan is done. Take the open items in order. One item, o
 
 ## Open
 
-1. **`is_admin()` and `current_user_can()` follow the real admin request.** `oxidepress-php`, with the request identity from `oxidepress-server`. Today both are true only while a plugin settings page is drawn or saved. A visitor stays false. A signed-in user is true only for a capability that account has.
-2. **Deactivate one plugin without restarting the worker.** `oxidepress-php`. Deactivation still restarts the process because the hook registry cannot drop one callback. Removing one plugin should drop its hooks and shortcodes and leave the others running.
-3. **Edit a plugin post type in the block editor.** `oxidepress-server`. The list and the classic form exist at `/wp-admin/edit.php?post_type={name}`. The block editor stays on posts and pages. A `show_ui` type should open in that editor and still be unable to switch the row to a refused type.
+1. **Deactivate one plugin without restarting the worker.** `oxidepress-php`. Deactivation still leaves that plugin's hooks in place because the hook registry cannot drop one callback. Removing one plugin should drop its hooks and shortcodes and leave the others running.
+2. **Edit a plugin post type in the block editor.** `oxidepress-server`. The list and the classic form exist at `/wp-admin/edit.php?post_type={name}`. The block editor stays on posts and pages. A `show_ui` type should open in that editor and still be unable to switch the row to a refused type.
 
 ## Later
 
@@ -35,3 +34,4 @@ These are not in the numbered plan. Do the open items first.
 - Plugin settings pages save registered options and refuse protected keys. `9f32b31`.
 - A plugin post type stores rows. An administrator lists and edits them. The public address is `/{slug}/`. Revisions and template types are refused. `321fb88`.
 - `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.
+- `is_admin()` follows `/wp-admin` and `/wp-login.php`. `current_user_can()` follows the signed-in role. A visitor is false.

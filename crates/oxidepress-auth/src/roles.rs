@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to add the shop manager role.
+// Modified by Vabian124 on 2026-11-09 to parse a WordPress capability name.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use serde::{Deserialize, Serialize};
@@ -76,6 +76,20 @@ pub enum Capability {
     Export,
     Unfiltered,
     Read,
+}
+
+impl Capability {
+    /// WordPress capability slug, such as `manage_options`.
+    ///
+    /// `unfiltered_html` is the name plugins pass. The stored capability is `unfiltered`.
+    pub fn from_name(name: &str) -> Option<Self> {
+        let name = if name == "unfiltered_html" {
+            "unfiltered"
+        } else {
+            name
+        };
+        serde_json::from_value(serde_json::Value::String(name.to_string())).ok()
+    }
 }
 
 impl Role {
@@ -249,6 +263,21 @@ mod tests {
         assert!(admin.can(&Capability::ManageOptions));
         assert!(admin.can(&Capability::EditPosts));
         assert!(admin.can(&Capability::DeleteUsers));
+    }
+
+    #[test]
+    fn test_capability_names_match_wordpress() {
+        assert_eq!(
+            Capability::from_name("manage_options"),
+            Some(Capability::ManageOptions)
+        );
+        assert_eq!(
+            Capability::from_name("unfiltered_html"),
+            Some(Capability::Unfiltered)
+        );
+        assert!(Capability::from_name("not_a_cap").is_none());
+        assert!(Role::Administrator.can(&Capability::from_name("edit_posts").unwrap()));
+        assert!(!Role::Subscriber.can(&Capability::from_name("edit_posts").unwrap()));
     }
 
     #[test]

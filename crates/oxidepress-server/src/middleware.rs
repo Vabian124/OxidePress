@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to honor the firewall switch and the saved rate limit.
+// Modified by Vabian124 on 2026-11-09 to tell PHP who the signed-in visitor is.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -792,6 +792,64 @@ fn decode_query(query: &str) -> String {
     String::from_utf8_lossy(&decoded).into_owned()
 }
 
+/// Admin screens. The public site stays false even when an administrator is signed in.
+pub fn request_is_admin(path: &str) -> bool {
+    path == "/wp-admin"
+        || path.starts_with("/wp-admin/")
+        || path == "/wp-login.php"
+        || path.starts_with("/wp-login.php?")
+}
+
+/// The visitor a PHP hook sees for the current request.
+#[derive(Clone, Debug)]
+pub struct Visitor {
+    pub admin: bool,
+    pub role: Option<Role>,
+}
+
+impl Visitor {
+    pub fn anonymous() -> Self {
+        Self {
+            admin: false,
+            role: None,
+        }
+    }
+
+    pub fn allows(&self, capability: &str) -> bool {
+        let Some(role) = &self.role else {
+            return false;
+        };
+        if role.as_str() == capability {
+            return true;
+        }
+        Capability::from_name(capability).is_some_and(|cap| role.can(&cap))
+    }
+}
+
+tokio::task_local! {
+    pub static VISITOR: Visitor;
+}
+
+/// Bind the session role for PHP `is_admin()` and `current_user_can()`.
+pub async fn bind_visitor(
+    State(state): State<Arc<AppState>>,
+    request: Request,
+    next: Next,
+) -> Response {
+    let admin = request_is_admin(request.uri().path());
+    let role = if let Some(sid) = extract_session_cookie(&request) {
+        if let Some(session) = state.sessions.get_session(&sid).await {
+            resolve_session_role(&session, &state.db).await
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+    let visitor = Visitor { admin, role };
+    VISITOR.scope(visitor, next.run(request)).await
+}
+
 fn waf_exempt_path(path: &str) -> bool {
     path.starts_with("/static/")
         || path.starts_with("/wp-content/uploads/")
@@ -925,6 +983,26 @@ mod tests {
             resp.headers().get("Cross-Origin-Opener-Policy").unwrap(),
             "same-origin"
         );
+    }
+
+    #[test]
+    fn admin_paths_and_subscriber_caps() {
+        assert!(request_is_admin("/wp-admin/edit.php"));
+        assert!(request_is_admin("/wp-login.php"));
+        assert!(!request_is_admin("/"));
+        assert!(!request_is_admin("/wp-admin-help"));
+        let visitor = Visitor {
+            admin: true,
+            role: Some(Role::Subscriber),
+        };
+        assert!(!visitor.allows("edit_posts"));
+        assert!(visitor.allows("read"));
+        assert!(!Visitor::anonymous().allows("read"));
+        assert!(Visitor {
+            admin: false,
+            role: Some(Role::Administrator),
+        }
+        .allows("manage_options"));
     }
 
     #[test]

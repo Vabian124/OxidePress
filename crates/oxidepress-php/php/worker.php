@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-09 to let plugins register post types and store posts.
+// Modified by Vabian124 on 2026-11-09 to answer is_admin and current_user_can from the host.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -651,7 +651,10 @@ function admin_url($path = '', $scheme = 'admin')
 function is_admin()
 {
     global $oxidepress_admin_depth;
-    return (int)$oxidepress_admin_depth > 0;
+    if ((int)$oxidepress_admin_depth > 0) {
+        return true;
+    }
+    return (bool)oxidepress_call('is_admin', array());
 }
 
 function is_multisite()
@@ -855,7 +858,13 @@ function nocache_headers()
 function current_user_can($capability, ...$args)
 {
     global $oxidepress_admin_depth;
-    return (int)$oxidepress_admin_depth > 0;
+    $capability = (string)$capability;
+    if ((int)$oxidepress_admin_depth > 0 && $capability === 'manage_options') {
+        return true;
+    }
+    return (bool)oxidepress_call('current_user_can', array(
+        'capability' => $capability,
+    ));
 }
 
 function wp_localize_script($handle, $object_name, $data)

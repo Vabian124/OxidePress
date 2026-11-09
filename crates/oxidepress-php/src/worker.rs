@@ -58,6 +58,17 @@ pub trait PhpHost: Send + Sync {
         Err("posts are not available".to_string())
     }
 
+    /// True while the host is drawing an admin screen.
+    fn is_admin(&self) -> bool {
+        false
+    }
+
+    /// Whether the signed-in account has a WordPress capability.
+    fn user_can(&self, capability: &str) -> bool {
+        let _ = capability;
+        false
+    }
+
     /// Perform one public HTTP request. The default refuses private addresses.
     fn http_request(
         &self,
@@ -802,6 +813,14 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             let force = frame.get("force").and_then(Value::as_bool).unwrap_or(false);
             Value::Bool(host.delete_post(id, force).unwrap_or(false))
         }
+        Some("is_admin") => Value::Bool(host.is_admin()),
+        Some("current_user_can") => {
+            let capability = frame
+                .get("capability")
+                .and_then(Value::as_str)
+                .unwrap_or("");
+            Value::Bool(host.user_can(capability))
+        }
         _ => Value::Null,
     }
 }
@@ -836,6 +855,8 @@ mod tests {
         http: Mutex<Vec<crate::http::HttpRequest>>,
         posts: Mutex<Vec<crate::posts::PostRecord>>,
         next_post: Mutex<u64>,
+        admin: bool,
+        caps: Vec<String>,
     }
 
     impl MemHost {
@@ -845,7 +866,16 @@ mod tests {
                 http: Mutex::new(Vec::new()),
                 posts: Mutex::new(Vec::new()),
                 next_post: Mutex::new(1),
+                admin: false,
+                caps: Vec::new(),
             }
+        }
+
+        fn with_visitor(admin: bool, caps: &[&str]) -> Self {
+            let mut host = Self::new();
+            host.admin = admin;
+            host.caps = caps.iter().map(|cap| (*cap).to_string()).collect();
+            host
         }
 
         fn set(&self, name: &str, value: &str) {
@@ -871,6 +901,14 @@ mod tests {
 
         fn delete_option(&self, name: &str) -> bool {
             self.options.lock().unwrap().remove(name).is_some()
+        }
+
+        fn is_admin(&self) -> bool {
+            self.admin
+        }
+
+        fn user_can(&self, capability: &str) -> bool {
+            self.caps.iter().any(|cap| cap == capability)
         }
 
         fn get_post(&self, id: u64) -> Option<crate::posts::PostRecord> {
@@ -1653,5 +1691,46 @@ add_action('init', function () {
         assert_eq!(content_dir, slash(&loaded_root));
 
         let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn php_current_user_can_follows_the_signed_in_visitor() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-caps-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("caps");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("caps.php"),
+            r#"<?php
+/**
+ * Plugin Name: Caps
+ */
+add_action('init', function () {
+    update_option('cap_admin', is_admin() ? 'yes' : 'no');
+    update_option('cap_edit', current_user_can('edit_posts') ? 'yes' : 'no');
+    update_option('cap_manage', current_user_can('manage_options') ? 'yes' : 'no');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::with_visitor(true, &["edit_posts"]));
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found.iter().find(|plugin| plugin.name == "Caps").unwrap();
+        let loaded = runtime.load(plugin).unwrap();
+        let hooks = HookRegistry::new();
+        let shortcodes = ShortcodeRegistry::new();
+        runtime.attach(&hooks, &shortcodes, &loaded);
+        hooks.do_action("init", &json!({}));
+        assert_eq!(host.get_option("cap_admin").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("cap_edit").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("cap_manage").as_deref(), Some("no"));
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
     }
 }

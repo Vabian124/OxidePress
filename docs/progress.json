@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, and run its activation hook once when an administrator turns it on. What remains is the worker limits in open.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, run its activation hook once, and see the signed-in role. What remains is the worker limits in open.",
   "done": [
     {
       "id": "single-site-plan",
@@ -73,21 +73,19 @@
       "status": "done",
       "crate": "oxidepress-php",
       "note": "Boot includes active plugins and does not run the hook again."
+    },
+    {
+      "id": "admin-capabilities",
+      "title": "is_admin and current_user_can follow the signed-in visitor",
+      "status": "done",
+      "crate": "oxidepress-server",
+      "note": "A visitor is false. manage_options stays true while a plugin settings page is drawn."
     }
   ],
   "open": [
     {
-      "id": "admin-capabilities",
-      "order": 1,
-      "title": "is_admin and current_user_can follow the real admin request",
-      "status": "open",
-      "crate": "oxidepress-php",
-      "also": ["oxidepress-server"],
-      "acceptance": "They are true on an authenticated admin request for a capability that user has, and false for a visitor and for a capability that user lacks. The settings-page window is no longer the only case."
-    },
-    {
       "id": "deactivate-one-plugin",
-      "order": 2,
+      "order": 1,
       "title": "Deactivate one plugin without restarting the worker",
       "status": "open",
       "crate": "oxidepress-php",
@@ -95,7 +93,7 @@
     },
     {
       "id": "custom-type-block-editor",
-      "order": 3,
+      "order": 2,
       "title": "Edit a plugin post type in the block editor",
       "status": "open",
       "crate": "oxidepress-server",
