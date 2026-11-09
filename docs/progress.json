@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, run its activation hook once, see the signed-in role, and be deactivated without stopping the others. What remains is the block editor for those types, then the later items.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, run its activation hook once, see the signed-in role, and be deactivated without stopping the others. Next is post meta, then taxonomies.",
   "done": [
     {
       "id": "single-site-plan",
@@ -65,7 +65,14 @@
       "status": "done",
       "crate": "oxidepress-php",
       "commit": "321fb88",
-      "note": "Admin list and classic editor at /wp-admin/edit.php?post_type={name}. Public permalink is /{slug}/. Revisions and template types are refused. The block editor stays on posts and pages."
+      "note": "Admin list at /wp-admin/edit.php?post_type={name}. Public permalink is /{slug}/. Revisions and template types are refused."
+    },
+    {
+      "id": "custom-type-block-editor",
+      "title": "Edit a plugin post type in the block editor",
+      "status": "done",
+      "crate": "oxidepress-server",
+      "note": "A show_ui type opens the block editor. REST reads and writes that type at /wp-json/wp/v2/{name}. An update cannot switch the row to another type. Revisions, templates, products, and orders stay on their own routes."
     },
     {
       "id": "activation-callbacks",
@@ -89,30 +96,21 @@
       "note": "That plugin's hooks and shortcodes stop. The others keep running. Turning it back on reuses the loaded copy."
     }
   ],
-  "open": [
-    {
-      "id": "custom-type-block-editor",
-      "order": 1,
-      "title": "Edit a plugin post type in the block editor",
-      "status": "open",
-      "crate": "oxidepress-server",
-      "acceptance": "A show_ui type opened from the admin uses the block editor and still cannot switch the row to a refused type."
-    }
-  ],
+  "open": [],
   "later": [
     {
       "id": "post-meta",
       "title": "get_post_meta and update_post_meta for a dropped-in plugin",
       "status": "later",
       "crate": "oxidepress-php",
-      "note": "Not in the numbered plan. Do the open items first."
+      "note": "Not in the numbered plan. Next."
     },
     {
       "id": "taxonomies",
       "title": "register_taxonomy with a list screen",
       "status": "later",
       "crate": "oxidepress-php",
-      "note": "Not in the numbered plan. Do the open items first."
+      "note": "Not in the numbered plan. After post meta."
     }
   ],
   "out_of_plan": [

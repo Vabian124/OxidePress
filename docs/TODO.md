@@ -6,11 +6,11 @@ The numbered single-site plan is done. Take the open items in order. One item, o
 
 ## Open
 
-1. **Edit a plugin post type in the block editor.** `oxidepress-server`. The list and the classic form exist at `/wp-admin/edit.php?post_type={name}`. The block editor stays on posts and pages. A `show_ui` type should open in that editor and still be unable to switch the row to a refused type.
+None. The later list is next.
 
 ## Later
 
-These are not in the numbered plan. Do the open items first.
+These are not in the numbered plan. Take them in this order.
 
 - `get_post_meta` and `update_post_meta` for a dropped-in plugin. `oxidepress-php`.
 - `register_taxonomy` with a list screen. `oxidepress-php`.
@@ -32,6 +32,7 @@ These are not in the numbered plan. Do the open items first.
 - Enqueued styles and scripts print. `f78e4c8`.
 - Plugin settings pages save registered options and refuse protected keys. `9f32b31`.
 - A plugin post type stores rows. An administrator lists and edits them. The public address is `/{slug}/`. Revisions and template types are refused. `321fb88`.
+- A `show_ui` plugin post type opens in the block editor. Saving it cannot switch the row to a refused type.
 - `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.
 - `is_admin()` follows `/wp-admin` and `/wp-login.php`. `current_user_can()` follows the signed-in role. A visitor is false.
 - Deactivating one plugin stops its hooks and shortcodes. The other plugins keep running.

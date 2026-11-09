@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to refuse unregistered post types and statuses.
+// Modified by Vabian124 on 2026-11-09 to edit plugin post types in the block editor.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -116,7 +116,7 @@ pub async fn build_post(
     site_url: &str,
     db: &sea_orm::DatabaseConnection,
 ) -> WpPost {
-    let links = post_links(site_url, p.id, "post", p.post_author);
+    let links = post_links(site_url, p.id, &p.post_type, p.post_author);
     let link = format!("{}/{}", site_url.trim_end_matches('/'), p.post_name);
     let guid_str = if p.guid.is_empty() {
         format!("{}/?p={}", site_url.trim_end_matches('/'), p.id)
@@ -151,7 +151,7 @@ pub async fn build_post(
         modified_gmt: p.post_modified_gmt.format("%Y-%m-%dT%H:%M:%S").to_string(),
         slug: p.post_name,
         status: p.post_status,
-        post_type: "post".to_string(),
+        post_type: p.post_type.clone(),
         link,
         title: WpRendered {
             rendered: rendered_title,
@@ -382,6 +382,8 @@ pub fn read_routes() -> Router<ApiState> {
     Router::new()
         .route("/wp-json/wp/v2/posts", get(list_posts))
         .route("/wp-json/wp/v2/posts/{id}", get(get_post))
+        .route("/wp-json/wp/v2/{rest_base}", get(list_custom_posts))
+        .route("/wp-json/wp/v2/{rest_base}/{id}", get(get_custom_post))
 }
 
 /// Protected write routes (POST/PUT/DELETE) — authentication required.
@@ -394,6 +396,167 @@ pub fn write_routes() -> Router<ApiState> {
                 .patch(update_post)
                 .delete(delete_post),
         )
+        .route(
+            "/wp-json/wp/v2/{rest_base}",
+            axum::routing::post(create_custom_post),
+        )
+        .route(
+            "/wp-json/wp/v2/{rest_base}/{id}",
+            axum::routing::put(update_custom_post)
+                .patch(update_custom_post)
+                .delete(delete_custom_post),
+        )
+}
+
+fn require_custom_type(state: &ApiState, name: &str) -> Result<String, WpError> {
+    if !custom_rest_base_allowed(&state.post_types, name) {
+        return Err(WpError::not_found("post type is not available"));
+    }
+    Ok(name.to_string())
+}
+
+/// A plugin type can use the block editor when it is registered, visible, and not internal.
+pub fn custom_rest_base_allowed(registry: &oxidepress_core::PostTypeRegistry, name: &str) -> bool {
+    let valid = (1..=20).contains(&name.len())
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_');
+    if !valid
+        || matches!(
+            name,
+            "revision"
+                | "nav_menu_item"
+                | "custom_css"
+                | "customize_changeset"
+                | "oembed_cache"
+                | "user_request"
+                | "wp_block"
+                | "wp_template"
+                | "wp_template_part"
+                | "wp_global_styles"
+                | "wp_navigation"
+                | "wp_font_family"
+                | "wp_font_face"
+                | "product"
+                | "shop_order"
+        )
+    {
+        return false;
+    }
+    matches!(
+        registry.get(name),
+        Some(kind) if !kind.builtin && kind.args.show_ui && registry.allows_content(name)
+    )
+}
+
+async fn list_custom_posts(
+    State(state): State<ApiState>,
+    Path(rest_base): Path<String>,
+    Query(params): Query<ListQuery>,
+) -> Result<Json<Vec<WpPost>>, WpError> {
+    let rest_base = require_custom_type(&state, &rest_base)?;
+    let status = params.status.as_deref().unwrap_or("publish");
+    let posts = wp_posts::Entity::find()
+        .filter(wp_posts::Column::PostType.eq(rest_base))
+        .filter(wp_posts::Column::PostStatus.eq(status))
+        .order_by_desc(wp_posts::Column::PostDate)
+        .limit(params.per_page.unwrap_or(10).min(20))
+        .all(&state.db)
+        .await
+        .map_err(|e| WpError::internal(e.to_string()))?;
+    let mut out = Vec::with_capacity(posts.len());
+    for post in posts {
+        out.push(build_post(post, &state.site_url, &state.db).await);
+    }
+    Ok(Json(out))
+}
+
+async fn get_custom_post(
+    State(state): State<ApiState>,
+    Path((rest_base, id)): Path<(String, u64)>,
+    Query(params): Query<GetPostQuery>,
+) -> Result<Json<Value>, WpError> {
+    let rest_base = require_custom_type(&state, &rest_base)?;
+    let post = wp_posts::Entity::find_by_id(id)
+        .filter(wp_posts::Column::PostType.eq(rest_base))
+        .one(&state.db)
+        .await
+        .map_err(|e| WpError::internal(e.to_string()))?
+        .ok_or(WpError::not_found("Post not found"))?;
+    let wp_post = build_post(post, &state.site_url, &state.db).await;
+    let context = RestContext::from_option(params.context.as_deref());
+    let mut val = serde_json::to_value(&wp_post).unwrap_or_default();
+    if params._embed.is_some() {
+        let embedded = build_embedded(&state.db, &state.site_url, &wp_post).await;
+        val.as_object_mut()
+            .map(|object| object.insert("_embedded".to_string(), embedded));
+    }
+    filter_post_context(&mut val, context);
+    Ok(Json(val))
+}
+
+async fn create_custom_post(
+    State(state): State<ApiState>,
+    auth: crate::AuthUser,
+    Path(rest_base): Path<String>,
+    Json(mut input): Json<WpPostWrite>,
+) -> Result<(StatusCode, Json<WpPost>), WpError> {
+    let rest_base = require_custom_type(&state, &rest_base)?;
+    if input
+        .post_type
+        .as_deref()
+        .is_some_and(|kind| kind != rest_base)
+    {
+        return Err(WpError::bad_request("post type is not allowed"));
+    }
+    input.post_type = Some(rest_base);
+    create_post(State(state), auth, Json(input)).await
+}
+
+async fn update_custom_post(
+    State(state): State<ApiState>,
+    auth: crate::AuthUser,
+    Path((rest_base, id)): Path<(String, u64)>,
+    Json(input): Json<WpPostWrite>,
+) -> Result<Json<WpPost>, WpError> {
+    let rest_base = require_custom_type(&state, &rest_base)?;
+    update_saved_post(state, auth, id, input, &rest_base).await
+}
+
+async fn delete_custom_post(
+    State(state): State<ApiState>,
+    auth: crate::AuthUser,
+    Path((rest_base, id)): Path<(String, u64)>,
+    Query(params): Query<DeletePostQuery>,
+) -> Result<Json<WpPost>, WpError> {
+    let rest_base = require_custom_type(&state, &rest_base)?;
+    auth.require(&oxidepress_auth::Capability::DeletePosts)?;
+    let post = wp_posts::Entity::find_by_id(id)
+        .filter(wp_posts::Column::PostType.eq(rest_base))
+        .one(&state.db)
+        .await
+        .map_err(|e| WpError::internal(e.to_string()))?
+        .ok_or(WpError::not_found("Post not found"))?;
+    let response = build_post(post.clone(), &state.site_url, &state.db).await;
+    let force = params.force.unwrap_or(false);
+    let post_id_val = serde_json::json!(id);
+    state.hooks.do_action("delete_post", &post_id_val);
+    if force {
+        wp_posts::Entity::delete_by_id(id)
+            .exec(&state.db)
+            .await
+            .map_err(|e| WpError::internal(e.to_string()))?;
+        state.hooks.do_action("deleted_post", &post_id_val);
+    } else {
+        let mut active: wp_posts::ActiveModel = post.into();
+        active.post_status = Set("trash".to_string());
+        active
+            .update(&state.db)
+            .await
+            .map_err(|e| WpError::internal(e.to_string()))?;
+        state.hooks.do_action("trashed_post", &post_id_val);
+    }
+    Ok(Json(response))
 }
 
 async fn list_posts(
@@ -620,7 +783,7 @@ async fn create_post(
     let status = input.status.unwrap_or_else(|| "draft".to_string());
     if !matches!(
         status.as_str(),
-        "publish" | "draft" | "pending" | "private" | "future"
+        "publish" | "draft" | "pending" | "private" | "future" | "auto-draft"
     ) {
         return Err(WpError::bad_request("status is not allowed"));
     }
@@ -709,9 +872,34 @@ async fn update_post(
     Path(id): Path<u64>,
     Json(input): Json<WpPostWrite>,
 ) -> Result<Json<WpPost>, WpError> {
+    update_saved_post(state, auth, id, input, "post").await
+}
+
+async fn update_saved_post(
+    state: ApiState,
+    auth: crate::AuthUser,
+    id: u64,
+    input: WpPostWrite,
+    expected_type: &str,
+) -> Result<Json<WpPost>, WpError> {
     auth.require(&oxidepress_auth::Capability::EditPosts)?;
+    if let Some(status) = input.status.as_deref() {
+        if !matches!(
+            status,
+            "publish" | "draft" | "pending" | "private" | "future" | "auto-draft" | "trash"
+        ) {
+            return Err(WpError::bad_request("status is not allowed"));
+        }
+    }
+    if input
+        .post_type
+        .as_deref()
+        .is_some_and(|kind| kind != expected_type)
+    {
+        return Err(WpError::bad_request("post type is not allowed"));
+    }
     let post = wp_posts::Entity::find_by_id(id)
-        .filter(wp_posts::Column::PostType.eq("post"))
+        .filter(wp_posts::Column::PostType.eq(expected_type))
         .one(&state.db)
         .await
         .map_err(|e| WpError::internal(e.to_string()))?
@@ -938,4 +1126,32 @@ async fn set_sticky(db: &sea_orm::DatabaseConnection, post_id: u64, sticky: bool
         .collect::<Vec<_>>()
         .join(",");
     let _ = options.update_option("sticky_posts", &new_value).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::custom_rest_base_allowed;
+    use oxidepress_core::post_type::PostTypeArgs;
+    use oxidepress_core::PostTypeRegistry;
+
+    #[test]
+    fn plugin_post_type_can_use_the_block_editor_route() {
+        let registry = PostTypeRegistry::new();
+        let mut args = PostTypeArgs::default();
+        args.label = "Events".to_string();
+        registry.register("event", args, false);
+
+        let mut hidden = PostTypeArgs::default();
+        hidden.show_ui = false;
+        registry.register("secret", hidden, false);
+
+        assert!(custom_rest_base_allowed(&registry, "event"));
+        assert!(!custom_rest_base_allowed(&registry, "secret"));
+        assert!(!custom_rest_base_allowed(&registry, "post"));
+        assert!(!custom_rest_base_allowed(&registry, "revision"));
+        assert!(!custom_rest_base_allowed(&registry, "wp_template"));
+        assert!(!custom_rest_base_allowed(&registry, "product"));
+        assert!(!custom_rest_base_allowed(&registry, "not-registered"));
+        assert!(!custom_rest_base_allowed(&registry, "../event"));
+    }
 }

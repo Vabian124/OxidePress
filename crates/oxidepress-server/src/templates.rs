@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to render the custom post editor template.
+// Modified by Vabian124 on 2026-11-09 to render a plugin post type in the block editor.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::path::Path;
@@ -145,18 +145,25 @@ mod tests {
             "custom_post_types",
             &serde_json::json!([{ "name": "event", "label": "Events" }]),
         );
-        let html = tera
+        let list = tera
             .render("admin/custom-post-edit.html", &ctx)
-            .expect("render custom post editor");
-        assert!(html.contains("name=\"post_type\" value=\"event\""));
-        assert!(html.contains("edit.php?post_type=event"));
-        assert!(html.contains("class=\"menu-item active\""));
-        assert!(html.contains("Launch"));
-        assert!(
-            html.contains("&lt;p&gt;body&lt;/p&gt;")
-                || html.contains("&lt;p&gt;body&lt;&#x2F;p&gt;"),
-            "content was not escaped"
-        );
-        assert!(html.contains("value=\"draft\" selected") || html.contains("selected"));
+            .expect("render custom post list chrome");
+        assert!(list.contains("edit.php?post_type=event"));
+        assert!(list.contains("class=\"menu-item active\""));
+
+        ctx.insert("rest_base", "event");
+        ctx.insert("post_title_json", "\"Launch\"");
+        ctx.insert("post_content_json", "\"<p>body</p>\"");
+        ctx.insert("post_excerpt_json", "\"\"");
+        ctx.insert("acf_fields", &serde_json::json!([]));
+        ctx.insert("api_nonce", "nonce");
+        ctx.insert("site_url", "http://localhost");
+        let editor = tera
+            .render("admin/post-edit.html", &ctx)
+            .expect("render block editor");
+        assert!(editor.contains("type: 'event'"));
+        assert!(editor.contains("rest_base: 'event'"));
+        assert!(editor.contains("path: '/wp/v2/' + settings.post.rest_base"));
+        assert!(editor.contains("initializeEditor('editor', settings.post.type"));
     }
 }

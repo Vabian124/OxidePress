@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to draw plugin settings pages and custom post screens.
+// Modified by Vabian124 on 2026-11-09 to open a plugin post type in the block editor.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -564,6 +564,24 @@ fn custom_type_label(state: &AppState, name: &str) -> Option<String> {
         Some(kind.name)
     } else {
         Some(kind.args.label)
+    }
+}
+
+fn editor_rest_base(post_type: &str) -> String {
+    match post_type {
+        "page" => "pages".to_string(),
+        "post" => "posts".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn editor_active_page(state: &AppState, post_type: &str) -> String {
+    if post_type == "page" {
+        "pages".to_string()
+    } else if custom_type_label(state, post_type).is_some() {
+        format!("type-{post_type}")
+    } else {
+        "posts".to_string()
     }
 }
 
@@ -1584,28 +1602,8 @@ async fn post_editor_new(
 ) -> Html<String> {
     let mut ctx = admin_context(&state, &session).await;
     let post_type = params.post_type.as_deref().unwrap_or("post");
-    if let Some(label) = custom_type_label(&state, post_type) {
-        let mut ctx = admin_context(&state, &session).await;
-        ctx.insert("active_page", &format!("type-{post_type}"));
-        ctx.insert("type_label", &label);
-        ctx.insert("post_type", post_type);
-        ctx.insert("post_id", &0u64);
-        ctx.insert("post_title", "");
-        ctx.insert("post_content", "");
-        ctx.insert("post_excerpt", "");
-        ctx.insert("post_status", "draft");
-        ctx.insert("post_slug", "");
-        ctx.insert("editing", &false);
-        return render_admin(&state, "admin/custom-post-edit.html", &ctx);
-    }
-    ctx.insert(
-        "active_page",
-        if post_type == "page" {
-            "pages"
-        } else {
-            "posts"
-        },
-    );
+    ctx.insert("active_page", &editor_active_page(&state, post_type));
+    ctx.insert("rest_base", &editor_rest_base(post_type));
     ctx.insert("editing", &false);
 
     let post_json = serde_json::json!({
@@ -1676,29 +1674,9 @@ async fn post_editor_edit(
 
     match post {
         Some(p) => {
-            if let Some(label) = custom_type_label(&state, &p.post_type) {
-                let mut ctx = admin_context(&state, &session).await;
-                ctx.insert("active_page", &format!("type-{}", p.post_type));
-                ctx.insert("type_label", &label);
-                ctx.insert("post_type", p.post_type.as_str());
-                ctx.insert("post_id", &p.id);
-                ctx.insert("post_title", &p.post_title);
-                ctx.insert("post_content", &p.post_content);
-                ctx.insert("post_excerpt", &p.post_excerpt);
-                ctx.insert("post_status", p.post_status.as_str());
-                ctx.insert("post_slug", p.post_name.as_str());
-                ctx.insert("editing", &true);
-                return render_admin(&state, "admin/custom-post-edit.html", &ctx).into_response();
-            }
             let mut ctx = admin_context(&state, &session).await;
-            ctx.insert(
-                "active_page",
-                if p.post_type == "page" {
-                    "pages"
-                } else {
-                    "posts"
-                },
-            );
+            ctx.insert("active_page", &editor_active_page(&state, &p.post_type));
+            ctx.insert("rest_base", &editor_rest_base(&p.post_type));
             ctx.insert("editing", &true);
 
             // Load featured image (_thumbnail_id from postmeta)

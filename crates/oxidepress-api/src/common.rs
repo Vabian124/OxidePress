@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-07 to rebrand as OxidePress.
+// Modified by Vabian124 on 2026-11-09 to link a plugin post type at its own REST base.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::http::{HeaderMap, StatusCode};
@@ -357,10 +357,10 @@ pub fn filter_fields(value: Value, fields: Option<&str>) -> Value {
 /// wp:term (embeddable, for category and post_tag), curies.
 pub fn post_links(site_url: &str, post_id: u64, post_type: &str, author_id: u64) -> Value {
     let base = site_url.trim_end_matches('/');
-    let collection_path = if post_type == "page" {
-        "pages"
-    } else {
-        "posts"
+    let collection_path = match post_type {
+        "page" => "pages",
+        "post" => "posts",
+        other => other,
     };
 
     json!({
