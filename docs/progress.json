@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-09",
-  "commit": "833c1d0",
+  "commit": "9934a4a",
   "wordpress": "7.1.4",
   "db_version": 61833,
   "plan": "docs/compatibility-plan.md",
@@ -72,6 +72,7 @@
       "title": "Edit a plugin post type in the block editor",
       "status": "done",
       "crate": "oxidepress-server",
+      "commit": "9934a4a",
       "note": "A show_ui type opens the block editor. REST reads and writes that type at /wp-json/wp/v2/{name}. An update cannot switch the row to another type. Revisions, templates, products, and orders stay on their own routes."
     },
     {
