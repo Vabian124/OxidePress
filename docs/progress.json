@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "commit": "156c559",
+  "commit": "551d99b",
   "wordpress": "7.1.4",
   "db_version": 61833,
   "plan": "docs/compatibility-plan.md",
@@ -96,6 +96,7 @@
       "title": "Store a term and assign it to a post",
       "status": "done",
       "crate": "oxidepress-php",
+      "commit": "551d99b",
       "note": "wp_insert_term writes wp_terms for a plugin taxonomy, category, or post_tag. wp_set_object_terms assigns those terms. nav_menu stays refused. The worker reads at most 200 terms in one taxonomy and returns 40."
     },
     {
