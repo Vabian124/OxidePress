@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-11 to store and assign terms from a plugin.
+// Modified by Vabian124 on 2026-11-11 to read and write comments through the host.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -1613,6 +1613,102 @@ function wp_delete_term($term, $taxonomy, $args = array())
     return (bool)oxidepress_call('delete_term', array(
         'term_id' => $id,
         'taxonomy' => $taxonomy,
+    ));
+}
+
+class WP_Comment
+{
+    public $comment_ID = 0;
+    public $comment_post_ID = 0;
+    public $comment_author = '';
+    public $comment_author_email = '';
+    public $comment_content = '';
+    public $comment_approved = '0';
+    public $comment_parent = 0;
+}
+
+function oxidepress_comment_from_row($row)
+{
+    if (!is_array($row) || !isset($row['id'])) {
+        return null;
+    }
+    $comment = new WP_Comment();
+    $comment->comment_ID = (int)$row['id'];
+    $comment->comment_post_ID = isset($row['post_id']) ? (int)$row['post_id'] : 0;
+    $comment->comment_author = isset($row['author']) ? (string)$row['author'] : '';
+    $comment->comment_author_email = isset($row['email']) ? (string)$row['email'] : '';
+    $comment->comment_content = isset($row['content']) ? (string)$row['content'] : '';
+    $comment->comment_approved = isset($row['status']) ? (string)$row['status'] : '0';
+    $comment->comment_parent = isset($row['parent']) ? (int)$row['parent'] : 0;
+    return $comment;
+}
+
+function wp_insert_comment($commentdata)
+{
+    if (!is_array($commentdata)) {
+        return false;
+    }
+    $row = oxidepress_call('insert_comment', array('comment' => array(
+        'post_id' => isset($commentdata['comment_post_ID']) ? (int)$commentdata['comment_post_ID'] : 0,
+        'author' => isset($commentdata['comment_author']) ? (string)$commentdata['comment_author'] : '',
+        'email' => isset($commentdata['comment_author_email']) ? (string)$commentdata['comment_author_email'] : '',
+        'content' => isset($commentdata['comment_content']) ? (string)$commentdata['comment_content'] : '',
+        'status' => isset($commentdata['comment_approved']) ? (string)$commentdata['comment_approved'] : '0',
+        'parent' => isset($commentdata['comment_parent']) ? (int)$commentdata['comment_parent'] : 0,
+    )));
+    if (!is_array($row) || !isset($row['id'])) {
+        return false;
+    }
+    return (int)$row['id'];
+}
+
+function get_comment($comment = null, $output = 'OBJECT')
+{
+    if ($comment instanceof WP_Comment) {
+        return $comment;
+    }
+    $id = (int)$comment;
+    if ($id <= 0) {
+        return null;
+    }
+    $row = oxidepress_call('get_comment', array('comment_id' => $id));
+    return oxidepress_comment_from_row($row);
+}
+
+function get_comments($args = array())
+{
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $status = isset($args['status']) ? (string)$args['status'] : 'approve';
+    $limit = isset($args['number']) ? (int)$args['number'] : 10;
+    $rows = oxidepress_call('query_comments', array('query' => array(
+        'post_id' => isset($args['post_id']) ? (int)$args['post_id'] : 0,
+        'status' => $status,
+        'limit' => $limit,
+    )));
+    if (!is_array($rows)) {
+        return array();
+    }
+    $comments = array();
+    foreach ($rows as $row) {
+        $comment = oxidepress_comment_from_row($row);
+        if ($comment) {
+            $comments[] = $comment;
+        }
+    }
+    return $comments;
+}
+
+function wp_delete_comment($comment_id, $force_delete = false)
+{
+    $id = (int)$comment_id;
+    if ($id <= 0) {
+        return false;
+    }
+    return (bool)oxidepress_call('delete_comment', array(
+        'comment_id' => $id,
+        'force' => (bool)$force_delete,
     ));
 }
 

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to let plugins store and assign terms.
+// Modified by Vabian124 on 2026-11-11 to let plugins read and write comments.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Run dropped-in WordPress plugins in one long-lived PHP process.
@@ -7,6 +7,7 @@
 //! hook and shortcode registrations in a single batch, and runs a callback
 //! only when Rust fires a tag that plugin registered.
 
+mod comments;
 mod discover;
 mod error;
 mod http;
@@ -15,6 +16,7 @@ mod protocol;
 mod taxonomies;
 mod worker;
 
+pub use comments::{CommentDraft, CommentQuery, CommentRecord};
 pub use discover::{discover, DiscoveredPlugin};
 pub use error::PhpError;
 pub use posts::{

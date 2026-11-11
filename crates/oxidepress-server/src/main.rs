@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to store terms a plugin assigns to a post.
+// Modified by Vabian124 on 2026-11-11 to store comments a plugin attaches to a post.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -983,6 +983,191 @@ impl PhpHost for OptionHost {
         let db = self.db.clone();
         block_on_host(async move { delete_term_row(&db, term_id, &taxonomy).await })
     }
+
+    fn insert_comment(
+        &self,
+        draft: &oxidepress_php::CommentDraft,
+    ) -> Result<oxidepress_php::CommentRecord, String> {
+        let draft = draft.clone();
+        let db = self.db.clone();
+        block_on_host(async move { insert_comment_row(&db, &draft).await })
+    }
+
+    fn get_comment(&self, id: u64) -> Option<oxidepress_php::CommentRecord> {
+        let db = self.db.clone();
+        block_on_host(async move { read_comment_row(&db, id).await })
+    }
+
+    fn query_comments(
+        &self,
+        query: &oxidepress_php::CommentQuery,
+    ) -> Vec<oxidepress_php::CommentRecord> {
+        let query = query.clone();
+        let db = self.db.clone();
+        block_on_host(async move { list_comment_rows(&db, &query).await.unwrap_or_default() })
+    }
+
+    fn delete_comment(&self, id: u64, force: bool) -> Result<bool, String> {
+        let db = self.db.clone();
+        block_on_host(async move { delete_comment_row(&db, id, force).await })
+    }
+}
+
+fn comment_record(
+    row: oxidepress_db::entities::wp_comments::Model,
+) -> oxidepress_php::CommentRecord {
+    oxidepress_php::CommentRecord {
+        id: row.comment_id,
+        post_id: row.comment_post_id,
+        author: row.comment_author,
+        email: row.comment_author_email,
+        content: row.comment_content,
+        status: row.comment_approved,
+        parent: row.comment_parent,
+    }
+}
+
+async fn comment_post_allowed(
+    db: &sea_orm::DatabaseConnection,
+    post_id: u64,
+) -> Result<(), String> {
+    use sea_orm::EntityTrait;
+    let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Err("post was not found".to_string());
+    };
+    if oxidepress_php::content_type_allowed(&post.post_type) {
+        Ok(())
+    } else {
+        Err("post type is not allowed".to_string())
+    }
+}
+
+async fn refresh_comment_count(
+    db: &sea_orm::DatabaseConnection,
+    post_id: u64,
+) -> Result<(), String> {
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    let count = oxidepress_db::entities::wp_comments::Entity::find()
+        .filter(oxidepress_db::entities::wp_comments::Column::CommentPostId.eq(post_id))
+        .filter(oxidepress_db::entities::wp_comments::Column::CommentApproved.eq("1"))
+        .all(db)
+        .await
+        .map_err(|err| err.to_string())?
+        .len() as i64;
+    if let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    {
+        let mut active: oxidepress_db::entities::wp_posts::ActiveModel = post.into();
+        active.comment_count = Set(count);
+        active.update(db).await.map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+async fn insert_comment_row(
+    db: &sea_orm::DatabaseConnection,
+    draft: &oxidepress_php::CommentDraft,
+) -> Result<oxidepress_php::CommentRecord, String> {
+    use sea_orm::{ActiveModelTrait, EntityTrait, Set};
+    comment_post_allowed(db, draft.post_id).await?;
+    let parent = if draft.parent > 0 {
+        oxidepress_db::entities::wp_comments::Entity::find_by_id(draft.parent)
+            .one(db)
+            .await
+            .map_err(|err| err.to_string())?
+            .filter(|row| row.comment_post_id == draft.post_id)
+            .map(|row| row.comment_id)
+            .unwrap_or(0)
+    } else {
+        0
+    };
+    let now = chrono::Utc::now().naive_utc();
+    let saved = oxidepress_db::entities::wp_comments::ActiveModel {
+        comment_post_id: Set(draft.post_id),
+        comment_author: Set(draft.author.clone()),
+        comment_author_email: Set(draft.email.clone()),
+        comment_author_url: Set(String::new()),
+        comment_author_ip: Set(String::new()),
+        comment_date: Set(now),
+        comment_date_gmt: Set(now),
+        comment_content: Set(draft.content.clone()),
+        comment_karma: Set(0),
+        comment_approved: Set(draft.status.clone()),
+        comment_agent: Set(String::new()),
+        comment_type: Set("comment".to_string()),
+        comment_parent: Set(parent),
+        user_id: Set(0),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|err| err.to_string())?;
+    refresh_comment_count(db, draft.post_id).await?;
+    Ok(comment_record(saved))
+}
+
+async fn read_comment_row(
+    db: &sea_orm::DatabaseConnection,
+    id: u64,
+) -> Option<oxidepress_php::CommentRecord> {
+    use sea_orm::EntityTrait;
+    oxidepress_db::entities::wp_comments::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .ok()
+        .flatten()
+        .map(comment_record)
+}
+
+async fn list_comment_rows(
+    db: &sea_orm::DatabaseConnection,
+    query: &oxidepress_php::CommentQuery,
+) -> Result<Vec<oxidepress_php::CommentRecord>, String> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QuerySelect};
+    let mut finder = oxidepress_db::entities::wp_comments::Entity::find()
+        .filter(oxidepress_db::entities::wp_comments::Column::CommentPostId.eq(query.post_id));
+    if query.status != "all" {
+        finder = finder.filter(
+            oxidepress_db::entities::wp_comments::Column::CommentApproved.eq(query.status.clone()),
+        );
+    }
+    let rows = finder
+        .limit(query.limit)
+        .all(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(rows.into_iter().map(comment_record).collect())
+}
+
+async fn delete_comment_row(
+    db: &sea_orm::DatabaseConnection,
+    id: u64,
+    force: bool,
+) -> Result<bool, String> {
+    use sea_orm::{ActiveModelTrait, EntityTrait, ModelTrait, Set};
+    let Some(row) = oxidepress_db::entities::wp_comments::Entity::find_by_id(id)
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Ok(false);
+    };
+    let post_id = row.comment_post_id;
+    if force {
+        row.delete(db).await.map_err(|err| err.to_string())?;
+    } else {
+        let mut active: oxidepress_db::entities::wp_comments::ActiveModel = row.into();
+        active.comment_approved = Set("trash".to_string());
+        active.update(db).await.map_err(|err| err.to_string())?;
+    }
+    refresh_comment_count(db, post_id).await?;
+    Ok(true)
 }
 
 fn write_post_meta(

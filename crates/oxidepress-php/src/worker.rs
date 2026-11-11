@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to store and assign terms from a plugin.
+// Modified by Vabian124 on 2026-11-11 to let plugins read and write comments.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -132,6 +132,36 @@ pub trait PhpHost: Send + Sync {
     fn delete_term(&self, term_id: u64, taxonomy: &str) -> Result<bool, String> {
         let _ = (term_id, taxonomy);
         Err("terms are not available".to_string())
+    }
+
+    /// Store one comment. The default has no comment store.
+    fn insert_comment(
+        &self,
+        draft: &crate::comments::CommentDraft,
+    ) -> Result<crate::comments::CommentRecord, String> {
+        let _ = draft;
+        Err("comments are not available".to_string())
+    }
+
+    /// Read one comment.
+    fn get_comment(&self, id: u64) -> Option<crate::comments::CommentRecord> {
+        let _ = id;
+        None
+    }
+
+    /// List comments on one post.
+    fn query_comments(
+        &self,
+        query: &crate::comments::CommentQuery,
+    ) -> Vec<crate::comments::CommentRecord> {
+        let _ = query;
+        Vec::new()
+    }
+
+    /// Trash a comment, or delete the row when `force` is set.
+    fn delete_comment(&self, id: u64, force: bool) -> Result<bool, String> {
+        let _ = (id, force);
+        Err("comments are not available".to_string())
     }
 
     /// True while the host is drawing an admin screen.
@@ -1016,6 +1046,38 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             let taxonomy = frame.get("taxonomy").and_then(Value::as_str).unwrap_or("");
             Value::Bool(host.delete_term(id, taxonomy).unwrap_or(false))
         }
+        Some("insert_comment") => {
+            match crate::comments::comment_draft_from_value(frame.get("comment")) {
+                Ok(draft) => match host.insert_comment(&draft) {
+                    Ok(comment) => crate::comments::comment_json(&comment),
+                    Err(_) => Value::Null,
+                },
+                Err(_) => Value::Null,
+            }
+        }
+        Some("get_comment") => {
+            let id = frame.get("comment_id").and_then(Value::as_u64).unwrap_or(0);
+            match host.get_comment(id) {
+                Some(comment) => crate::comments::comment_json(&comment),
+                None => Value::Null,
+            }
+        }
+        Some("query_comments") => {
+            match crate::comments::comment_query_from_value(frame.get("query")) {
+                Ok(query) => Value::Array(
+                    host.query_comments(&query)
+                        .iter()
+                        .map(crate::comments::comment_json)
+                        .collect(),
+                ),
+                Err(_) => Value::Array(Vec::new()),
+            }
+        }
+        Some("delete_comment") => {
+            let id = frame.get("comment_id").and_then(Value::as_u64).unwrap_or(0);
+            let force = frame.get("force").and_then(Value::as_bool).unwrap_or(false);
+            Value::Bool(host.delete_comment(id, force).unwrap_or(false))
+        }
         Some("is_admin") => Value::Bool(host.is_admin()),
         Some("current_user_can") => {
             let capability = frame
@@ -1066,8 +1128,10 @@ mod tests {
         meta: Mutex<Vec<StoredMeta>>,
         terms: Mutex<Vec<crate::taxonomies::TermRecord>>,
         rels: Mutex<Vec<(u64, u64)>>,
+        comments: Mutex<Vec<crate::comments::CommentRecord>>,
         next_post: Mutex<u64>,
         next_term: Mutex<u64>,
+        next_comment: Mutex<u64>,
         admin: bool,
         caps: Vec<String>,
     }
@@ -1081,8 +1145,10 @@ mod tests {
                 meta: Mutex::new(Vec::new()),
                 terms: Mutex::new(Vec::new()),
                 rels: Mutex::new(Vec::new()),
+                comments: Mutex::new(Vec::new()),
                 next_post: Mutex::new(1),
                 next_term: Mutex::new(1),
+                next_comment: Mutex::new(1),
                 admin: false,
                 caps: Vec::new(),
             }
@@ -1110,6 +1176,25 @@ mod tests {
                 .find(|post| post.id == id)
                 .map(|post| post.post_type.clone())
                 .ok_or_else(|| "post was not found".to_string())
+        }
+
+        fn recount_comments(&self, post_id: u64) {
+            let count = self
+                .comments
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|comment| comment.post_id == post_id && comment.status == "1")
+                .count() as i64;
+            if let Some(post) = self
+                .posts
+                .lock()
+                .unwrap()
+                .iter_mut()
+                .find(|post| post.id == post_id)
+            {
+                post.comment_count = count;
+            }
         }
 
         fn write_meta(
@@ -1470,6 +1555,84 @@ mod tests {
             terms.remove(index);
             let mut rels = self.rels.lock().unwrap();
             rels.retain(|(_, id)| *id != taxonomy_id);
+            Ok(true)
+        }
+
+        fn insert_comment(
+            &self,
+            draft: &crate::comments::CommentDraft,
+        ) -> Result<crate::comments::CommentRecord, String> {
+            let post_type = self.post_type_of(draft.post_id)?;
+            if !crate::posts::content_type_allowed(&post_type) {
+                return Err("post type is not allowed".to_string());
+            }
+            let parent = {
+                let comments = self.comments.lock().unwrap();
+                if draft.parent > 0
+                    && comments.iter().any(|comment| {
+                        comment.id == draft.parent && comment.post_id == draft.post_id
+                    })
+                {
+                    draft.parent
+                } else {
+                    0
+                }
+            };
+            let mut next = self.next_comment.lock().unwrap();
+            let id = *next;
+            *next += 1;
+            drop(next);
+            let comment = crate::comments::CommentRecord {
+                id,
+                post_id: draft.post_id,
+                author: draft.author.clone(),
+                email: draft.email.clone(),
+                content: draft.content.clone(),
+                status: draft.status.clone(),
+                parent,
+            };
+            self.comments.lock().unwrap().push(comment.clone());
+            self.recount_comments(draft.post_id);
+            Ok(comment)
+        }
+
+        fn get_comment(&self, id: u64) -> Option<crate::comments::CommentRecord> {
+            self.comments
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|comment| comment.id == id)
+                .cloned()
+        }
+
+        fn query_comments(
+            &self,
+            query: &crate::comments::CommentQuery,
+        ) -> Vec<crate::comments::CommentRecord> {
+            self.comments
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|comment| comment.post_id == query.post_id)
+                .filter(|comment| query.status == "all" || comment.status == query.status)
+                .take(query.limit as usize)
+                .cloned()
+                .collect()
+        }
+
+        fn delete_comment(&self, id: u64, force: bool) -> Result<bool, String> {
+            let mut comments = self.comments.lock().unwrap();
+            let Some(index) = comments.iter().position(|comment| comment.id == id) else {
+                return Ok(false);
+            };
+            let post_id = comments[index].post_id;
+            if force {
+                comments.remove(index);
+            } else {
+                comments[index].status = "trash".to_string();
+            }
+            drop(comments);
+            self.recount_comments(post_id);
             Ok(true)
         }
 
@@ -2272,6 +2435,91 @@ add_action('init', function () {
             Some("Bergen,Oslo")
         );
         assert_eq!(host.get_option("term_cleared").as_deref(), Some("0"));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_store_a_comment() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-comments-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("comments");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("comments.php"),
+            r#"<?php
+/**
+ * Plugin Name: Comments
+ */
+add_action('init', function () {
+    $id = wp_insert_post(array(
+        'post_title' => 'Launch',
+        'post_status' => 'publish',
+        'post_type' => 'post',
+    ));
+    $held = wp_insert_comment(array(
+        'comment_post_ID' => $id,
+        'comment_author' => 'Ada',
+        'comment_author_email' => 'ada@example.com',
+        'comment_content' => 'Hello',
+    ));
+    update_option('comment_held', $held ? (string)get_comment($held)->comment_approved : 'bad');
+    $cid = wp_insert_comment(array(
+        'comment_post_ID' => $id,
+        'comment_author' => 'Ada',
+        'comment_author_email' => 'ada@example.com',
+        'comment_content' => 'Published',
+        'comment_approved' => '1',
+    ));
+    update_option('comment_id', $cid ? (string)$cid : '0');
+    $found = get_comments(array('post_id' => $id, 'status' => 'approve'));
+    update_option('comment_count', is_array($found) ? (string)count($found) : '0');
+    $missing = wp_insert_comment(array(
+        'comment_post_ID' => 999,
+        'comment_author' => 'Ada',
+        'comment_content' => 'Nope',
+    ));
+    update_option('comment_missing', $missing ? 'accepted' : 'refused');
+    $bad = wp_insert_comment(array(
+        'comment_post_ID' => $id,
+        'comment_author' => 'Ada',
+        'comment_author_email' => 'not-an-email',
+        'comment_content' => 'Nope',
+    ));
+    update_option('comment_email', $bad ? 'accepted' : 'refused');
+    wp_delete_comment($cid, false);
+    $after = get_comment($cid);
+    update_option('comment_trashed', $after ? $after->comment_approved : 'gone');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "Comments")
+            .unwrap();
+        runtime.load(plugin).unwrap();
+        runtime.registered_post_types().unwrap();
+        assert_eq!(host.get_option("comment_held").as_deref(), Some("0"));
+        assert_eq!(host.get_option("comment_id").as_deref(), Some("2"));
+        assert_eq!(host.get_option("comment_count").as_deref(), Some("1"));
+        assert_eq!(
+            host.get_option("comment_missing").as_deref(),
+            Some("refused")
+        );
+        assert_eq!(host.get_option("comment_email").as_deref(), Some("refused"));
+        assert_eq!(host.get_option("comment_trashed").as_deref(), Some("trash"));
+        let post = host.get_post(1).unwrap();
+        assert_eq!(post.comment_count, 0);
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);
