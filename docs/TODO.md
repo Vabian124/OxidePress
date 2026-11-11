@@ -35,6 +35,7 @@ None. The open list is empty.
 - `wp_insert_term` stores a term in a plugin taxonomy, `category`, or `post_tag`. `wp_set_object_terms` assigns those terms to a post. `nav_menu` stays refused. `551d99b`.
 - `wp_insert_comment` stores a comment on an allowed post. The default status is hold. A missing post or a bad email is refused. `69dbf77`.
 - `get_term_meta`, `update_term_meta`, and `delete_term_meta` read and write `wp_termmeta`. A value has to be text. An array, a missing term, and `nav_menu` are refused. `8892f1d`.
+- `get_comment_meta`, `update_comment_meta`, and `delete_comment_meta` read and write `wp_commentmeta`. A value has to be text. An array and a missing comment are refused. Deleting the comment removes that meta.
 - `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.
 - `is_admin()` follows `/wp-admin` and `/wp-login.php`. `current_user_can()` follows the signed-in role. A visitor is false.
 - Deactivating one plugin stops its hooks and shortcodes. The other plugins keep running.

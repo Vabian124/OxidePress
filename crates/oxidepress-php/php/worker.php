@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-11 to read and write term meta through the host.
+// Modified by Vabian124 on 2026-11-11 to read and write comment meta through the host.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -1776,6 +1776,75 @@ function delete_term_meta($term_id, $meta_key, $meta_value = '')
     }
     return (bool)oxidepress_call('delete_term_meta', array(
         'term_id' => $id,
+        'meta_key' => $key,
+        'prev' => $prev,
+    ));
+}
+
+function get_comment_meta($comment_id, $key = '', $single = false)
+{
+    $id = (int)$comment_id;
+    $key = (string)$key;
+    if ($id <= 0) {
+        return $single ? '' : array();
+    }
+    $rows = oxidepress_call('get_comment_meta', array(
+        'comment_id' => $id,
+        'meta_key' => $key,
+    ));
+    if (!is_array($rows)) {
+        return $single ? '' : array();
+    }
+    if ($key === '') {
+        $grouped = array();
+        foreach ($rows as $row) {
+            if (!is_array($row)) {
+                continue;
+            }
+            $name = isset($row['key']) ? (string)$row['key'] : '';
+            $grouped[$name][] = isset($row['value']) ? (string)$row['value'] : '';
+        }
+        return $grouped;
+    }
+    $values = array();
+    foreach ($rows as $row) {
+        if (is_array($row)) {
+            $values[] = isset($row['value']) ? (string)$row['value'] : '';
+        }
+    }
+    if ($single) {
+        return count($values) ? $values[0] : '';
+    }
+    return $values;
+}
+
+function update_comment_meta($comment_id, $meta_key, $meta_value, $prev_value = '')
+{
+    $id = (int)$comment_id;
+    $key = (string)$meta_key;
+    $value = oxidepress_meta_text($meta_value);
+    $prev = oxidepress_meta_text($prev_value);
+    if ($id <= 0 || $key === '' || $value === null || $prev === null) {
+        return false;
+    }
+    return (bool)oxidepress_call('update_comment_meta', array(
+        'comment_id' => $id,
+        'meta_key' => $key,
+        'value' => $value,
+        'prev' => $prev,
+    ));
+}
+
+function delete_comment_meta($comment_id, $meta_key, $meta_value = '')
+{
+    $id = (int)$comment_id;
+    $key = (string)$meta_key;
+    $prev = oxidepress_meta_text($meta_value);
+    if ($id <= 0 || $key === '' || $prev === null) {
+        return false;
+    }
+    return (bool)oxidepress_call('delete_comment_meta', array(
+        'comment_id' => $id,
         'meta_key' => $key,
         'prev' => $prev,
     ));

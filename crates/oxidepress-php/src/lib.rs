@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to let plugins read and write term meta.
+// Modified by Vabian124 on 2026-11-11 to let plugins read and write comment meta.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Run dropped-in WordPress plugins in one long-lived PHP process.
