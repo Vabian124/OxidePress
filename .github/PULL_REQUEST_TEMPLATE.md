@@ -25,7 +25,7 @@ Closes #
 - [ ] `cargo clippy --workspace -- -D warnings` passes
 - [ ] Cookie `rustpress_session`, option keys `_rustpress_session_`, tables `rustpress_sessions` / `rustpress_cache` / `rustpress_migrations`, template key `rustpress_version`, env vars `RUSTPRESS_*`, WordPress `wp_*` tables, `themes/`, `static/`, `wp-content/`, and `LICENSE` were left alone
 
-CI also runs `cargo audit` (ignoring `RUSTSEC-2023-0071`, `RUSTSEC-2024-0436`, and `RUSTSEC-2026-0235`) and `cargo build --release --workspace`. `RUSTFLAGS=-Dwarnings`.
+CI also runs `cargo audit` (ignoring `RUSTSEC-2023-0071`, `RUSTSEC-2024-0436`, `RUSTSEC-2026-0235`, and `RUSTSEC-2026-0459`) and `cargo build --release --workspace`. `RUSTFLAGS=-Dwarnings`.
 
 ## Testing
 
