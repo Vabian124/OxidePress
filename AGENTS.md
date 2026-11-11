@@ -2,7 +2,7 @@
 
 OxidePress is a GPL-2.0-only fork of RustPress by Ryuji Yasukochi. Upstream history stays. `LICENSE` stays verbatim. Credit lives in `AUTHORS`.
 
-A task touches one crate. Read this file, run the map, then open that crate.
+A task touches one crate. Read this file, then [workflow.md](workflow.md), run the map, then open that crate.
 
 ```powershell
 pwsh -File tools/task.ps1 -Keyword auth

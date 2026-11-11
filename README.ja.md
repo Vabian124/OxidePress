@@ -10,7 +10,7 @@
 
 OxidePress は、WordPress のデータベースを Rust のバイナリから配信する。このツリーのテーマは Tera テーマである。PHP テーマは動かない。置いた PHP プラグインは、1 つのワーカーで起動し、フックと head/footer の echo を足すことができる。それは部分的な動作である。WordPress ではない。保存された SEO、フィールド、フォーム、セキュリティ、ショップの行を扱う経路は、ネイティブの画面のままである。すべてのプラグインを AI で変換することは、今のランタイムではない。[`oxidepress-rustify`](crates/oxidepress-rustify) は、後から使う骨格として残してよい。
 
-WordPress 7.1.4 に対するスキーマと動作の記録は [docs/compatibility-plan.md](docs/compatibility-plan.md)。残りの作業は [docs/TODO.md](docs/TODO.md) で、同じ一覧が [docs/progress.json](docs/progress.json) にある。2026-11-07 のローカルサイトの状態は [docs/alpha-status.md](docs/alpha-status.md)。
+WordPress 7.1.4 に対するスキーマと動作の記録は [docs/compatibility-plan.md](docs/compatibility-plan.md)。残りの作業は [docs/TODO.md](docs/TODO.md) で、同じ一覧が [docs/progress.json](docs/progress.json) にある。機能を一つ進める手順は [workflow.md](workflow.md)。2026-11-07 のローカルサイトの状態は [docs/alpha-status.md](docs/alpha-status.md)。
 
 ## プラグインの二つの経路
 

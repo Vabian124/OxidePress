@@ -10,7 +10,7 @@ Independent fork of [RustPress](https://github.com/LegacyToRustProject/RustPress
 
 OxidePress serves a WordPress database from a Rust binary. Themes in this tree are Tera themes. PHP themes do not run. A dropped-in PHP plugin can boot in one worker and contribute hooks and head/footer echo. That is partial. It is not WordPress. The native screens remain the path for stored SEO, fields, forms, security, and shop rows. Full AI conversion of every plugin is not the current runtime. [`oxidepress-rustify`](crates/oxidepress-rustify) may stay as a later skeleton.
 
-The schema and behavior record against WordPress 7.1.4 is [docs/compatibility-plan.md](docs/compatibility-plan.md). Remaining work is [docs/TODO.md](docs/TODO.md), and the same list is [docs/progress.json](docs/progress.json). What the local site was doing on 2026-11-07 is [docs/alpha-status.md](docs/alpha-status.md).
+The schema and behavior record against WordPress 7.1.4 is [docs/compatibility-plan.md](docs/compatibility-plan.md). Remaining work is [docs/TODO.md](docs/TODO.md), and the same list is [docs/progress.json](docs/progress.json). The feature loop is [workflow.md](workflow.md). What the local site was doing on 2026-11-07 is [docs/alpha-status.md](docs/alpha-status.md).
 
 ## Two plugin paths
 

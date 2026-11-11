@@ -2,7 +2,7 @@
 
 Updated 2026-11-11. The behavior record is [compatibility-plan.md](compatibility-plan.md). Machine-readable status is [progress.json](progress.json). The local site note is [alpha-status.md](alpha-status.md).
 
-The numbered single-site plan is done. Take the open items in order. One item, one crate, then update both this file and `progress.json`.
+The numbered single-site plan is done. Take the open items in order. One item, one crate, then update both this file and `progress.json`. The loop is [../workflow.md](../workflow.md).
 
 ## Open
 
