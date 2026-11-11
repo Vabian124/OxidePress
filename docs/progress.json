@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "commit": "551d99b",
+  "commit": "8892f1d",
   "wordpress": "7.1.4",
   "db_version": 61833,
   "plan": "docs/compatibility-plan.md",
@@ -112,6 +112,7 @@
       "title": "get_term_meta and update_term_meta for a dropped-in plugin",
       "status": "done",
       "crate": "oxidepress-php",
+      "commit": "8892f1d",
       "note": "delete_term_meta is included. Values are text. An array is refused. A missing term or a nav_menu term is not written."
     },
     {
