@@ -31,7 +31,7 @@ None. The open list is empty.
 - A plugin post type stores rows. An administrator lists and edits them. The public address is `/{slug}/`. Revisions and template types are refused. `321fb88`.
 - A `show_ui` plugin post type opens in the block editor. Saving it cannot switch the row to a refused type. `9934a4a`.
 - `get_post_meta`, `update_post_meta`, `add_post_meta`, and `delete_post_meta` read and write `wp_postmeta`. A value has to be text. An array is refused. `ff248f8`.
-- `register_taxonomy` adds a `show_ui` taxonomy to the admin list at `/wp-admin/edit-tags.php?taxonomy={name}`. `category`, `post_tag`, `nav_menu`, and `post_format` stay reserved.
+- `register_taxonomy` adds a `show_ui` taxonomy to the admin list at `/wp-admin/edit-tags.php?taxonomy={name}`. `category`, `post_tag`, `nav_menu`, and `post_format` stay reserved. `156c559`.
 - `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.
 - `is_admin()` follows `/wp-admin` and `/wp-login.php`. `current_user_can()` follows the signed-in role. A visitor is false.
 - Deactivating one plugin stops its hooks and shortcodes. The other plugins keep running.
