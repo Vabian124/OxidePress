@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to adopt plugin taxonomies at boot.
+// Modified by Vabian124 on 2026-11-11 to store terms a plugin assigns to a post.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -937,6 +937,52 @@ impl PhpHost for OptionHost {
             Ok(result.rows_affected > 0)
         })
     }
+
+    fn insert_term(
+        &self,
+        draft: &oxidepress_php::TermDraft,
+    ) -> Result<oxidepress_php::TermRecord, String> {
+        let draft = draft.clone();
+        let db = self.db.clone();
+        block_on_host(async move { insert_term_row(&db, &draft).await })
+    }
+
+    fn get_terms(&self, taxonomy: &str) -> Vec<oxidepress_php::TermRecord> {
+        let taxonomy = taxonomy.to_string();
+        let db = self.db.clone();
+        block_on_host(async move { list_term_rows(&db, &taxonomy).await.unwrap_or_default() })
+    }
+
+    fn set_object_terms(
+        &self,
+        post_id: u64,
+        taxonomy: &str,
+        term_ids: &[u64],
+        append: bool,
+    ) -> Result<(), String> {
+        let taxonomy = taxonomy.to_string();
+        let term_ids = term_ids.to_vec();
+        let db = self.db.clone();
+        block_on_host(
+            async move { assign_term_rows(&db, post_id, &taxonomy, &term_ids, append).await },
+        )
+    }
+
+    fn object_terms(&self, post_id: u64, taxonomy: &str) -> Vec<oxidepress_php::TermRecord> {
+        let taxonomy = taxonomy.to_string();
+        let db = self.db.clone();
+        block_on_host(async move {
+            object_term_rows(&db, post_id, &taxonomy)
+                .await
+                .unwrap_or_default()
+        })
+    }
+
+    fn delete_term(&self, term_id: u64, taxonomy: &str) -> Result<bool, String> {
+        let taxonomy = taxonomy.to_string();
+        let db = self.db.clone();
+        block_on_host(async move { delete_term_row(&db, term_id, &taxonomy).await })
+    }
 }
 
 fn write_post_meta(
@@ -1004,6 +1050,261 @@ fn write_post_meta(
         row.insert(&db).await.map_err(|err| err.to_string())?;
         Ok(true)
     })
+}
+
+async fn load_term_records(
+    db: &sea_orm::DatabaseConnection,
+    taxonomy: &str,
+) -> Result<Vec<oxidepress_php::TermRecord>, String> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    if !oxidepress_php::term_taxonomy_allowed(taxonomy) {
+        return Err("taxonomy is not allowed".to_string());
+    }
+    let taxonomies = oxidepress_db::entities::wp_term_taxonomy::Entity::find()
+        .filter(oxidepress_db::entities::wp_term_taxonomy::Column::Taxonomy.eq(taxonomy))
+        .all(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    let ids: Vec<u64> = taxonomies.iter().map(|row| row.term_id).collect();
+    if ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let terms = oxidepress_db::entities::wp_terms::Entity::find()
+        .filter(oxidepress_db::entities::wp_terms::Column::TermId.is_in(ids))
+        .all(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    let mut records = Vec::new();
+    for term in terms {
+        let Some(row) = taxonomies.iter().find(|row| row.term_id == term.term_id) else {
+            continue;
+        };
+        records.push(oxidepress_php::TermRecord {
+            term_id: term.term_id,
+            term_taxonomy_id: row.term_taxonomy_id,
+            taxonomy: taxonomy.to_string(),
+            name: term.name,
+            slug: term.slug,
+            description: row.description.clone(),
+            parent: row.parent,
+            count: row.count,
+        });
+    }
+    records.sort_by(|left, right| left.name.cmp(&right.name));
+    Ok(records)
+}
+
+async fn list_term_rows(
+    db: &sea_orm::DatabaseConnection,
+    taxonomy: &str,
+) -> Result<Vec<oxidepress_php::TermRecord>, String> {
+    let mut records = load_term_records(db, taxonomy).await?;
+    records.truncate(40);
+    Ok(records)
+}
+
+async fn insert_term_row(
+    db: &sea_orm::DatabaseConnection,
+    draft: &oxidepress_php::TermDraft,
+) -> Result<oxidepress_php::TermRecord, String> {
+    use sea_orm::{ActiveModelTrait, Set};
+    let existing = load_term_records(db, &draft.taxonomy).await?;
+    if existing.len() >= 200 {
+        return Err("too many terms".to_string());
+    }
+    if existing
+        .iter()
+        .any(|term| term.name.eq_ignore_ascii_case(&draft.name))
+    {
+        return Err("term exists".to_string());
+    }
+    let parent = if draft.parent > 0 && existing.iter().any(|term| term.term_id == draft.parent) {
+        draft.parent
+    } else {
+        0
+    };
+    let mut slug = draft.slug.clone();
+    let mut suffix = 2u32;
+    while existing.iter().any(|term| term.slug == slug) {
+        slug = format!("{}-{suffix}", draft.slug);
+        suffix += 1;
+        if suffix > 20 {
+            break;
+        }
+    }
+    let saved = oxidepress_db::entities::wp_terms::ActiveModel {
+        name: Set(draft.name.clone()),
+        slug: Set(slug.clone()),
+        term_group: Set(0),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|err| err.to_string())?;
+    let taxonomy = oxidepress_db::entities::wp_term_taxonomy::ActiveModel {
+        term_id: Set(saved.term_id),
+        taxonomy: Set(draft.taxonomy.clone()),
+        description: Set(draft.description.clone()),
+        parent: Set(parent),
+        count: Set(0),
+        ..Default::default()
+    }
+    .insert(db)
+    .await
+    .map_err(|err| err.to_string())?;
+    Ok(oxidepress_php::TermRecord {
+        term_id: saved.term_id,
+        term_taxonomy_id: taxonomy.term_taxonomy_id,
+        taxonomy: draft.taxonomy.clone(),
+        name: saved.name,
+        slug: saved.slug,
+        description: draft.description.clone(),
+        parent,
+        count: 0,
+    })
+}
+
+async fn assign_term_rows(
+    db: &sea_orm::DatabaseConnection,
+    post_id: u64,
+    taxonomy: &str,
+    term_ids: &[u64],
+    append: bool,
+) -> Result<(), String> {
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    let Some(post) = oxidepress_db::entities::wp_posts::Entity::find_by_id(post_id)
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Err("post was not found".to_string());
+    };
+    if !oxidepress_php::content_type_allowed(&post.post_type)
+        || !oxidepress_php::term_taxonomy_allowed(taxonomy)
+    {
+        return Err("terms are not allowed".to_string());
+    }
+    let records = load_term_records(db, taxonomy).await?;
+    if term_ids
+        .iter()
+        .any(|id| !records.iter().any(|term| term.term_id == *id))
+    {
+        return Err("term was not found".to_string());
+    }
+    let taxonomy_ids: Vec<u64> = records.iter().map(|term| term.term_taxonomy_id).collect();
+    if !append && !taxonomy_ids.is_empty() {
+        oxidepress_db::entities::wp_term_relationships::Entity::delete_many()
+            .filter(oxidepress_db::entities::wp_term_relationships::Column::ObjectId.eq(post_id))
+            .filter(
+                oxidepress_db::entities::wp_term_relationships::Column::TermTaxonomyId
+                    .is_in(taxonomy_ids),
+            )
+            .exec(db)
+            .await
+            .map_err(|err| err.to_string())?;
+    }
+    for id in term_ids.iter().take(20) {
+        let Some(term) = records.iter().find(|term| term.term_id == *id) else {
+            continue;
+        };
+        let exists = oxidepress_db::entities::wp_term_relationships::Entity::find()
+            .filter(oxidepress_db::entities::wp_term_relationships::Column::ObjectId.eq(post_id))
+            .filter(
+                oxidepress_db::entities::wp_term_relationships::Column::TermTaxonomyId
+                    .eq(term.term_taxonomy_id),
+            )
+            .one(db)
+            .await
+            .map_err(|err| err.to_string())?;
+        if exists.is_none() {
+            oxidepress_db::entities::wp_term_relationships::ActiveModel {
+                object_id: Set(post_id),
+                term_taxonomy_id: Set(term.term_taxonomy_id),
+                term_order: Set(0),
+            }
+            .insert(db)
+            .await
+            .map_err(|err| err.to_string())?;
+        }
+    }
+    for term in &records {
+        let count = oxidepress_db::entities::wp_term_relationships::Entity::find()
+            .filter(
+                oxidepress_db::entities::wp_term_relationships::Column::TermTaxonomyId
+                    .eq(term.term_taxonomy_id),
+            )
+            .all(db)
+            .await
+            .map_err(|err| err.to_string())?
+            .len() as i64;
+        if let Some(row) =
+            oxidepress_db::entities::wp_term_taxonomy::Entity::find_by_id(term.term_taxonomy_id)
+                .one(db)
+                .await
+                .map_err(|err| err.to_string())?
+        {
+            let mut active: oxidepress_db::entities::wp_term_taxonomy::ActiveModel = row.into();
+            active.count = Set(count);
+            active.update(db).await.map_err(|err| err.to_string())?;
+        }
+    }
+    Ok(())
+}
+
+async fn object_term_rows(
+    db: &sea_orm::DatabaseConnection,
+    post_id: u64,
+    taxonomy: &str,
+) -> Result<Vec<oxidepress_php::TermRecord>, String> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let records = load_term_records(db, taxonomy).await?;
+    let rels = oxidepress_db::entities::wp_term_relationships::Entity::find()
+        .filter(oxidepress_db::entities::wp_term_relationships::Column::ObjectId.eq(post_id))
+        .all(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(records
+        .into_iter()
+        .filter(|term| {
+            rels.iter()
+                .any(|rel| rel.term_taxonomy_id == term.term_taxonomy_id)
+        })
+        .take(40)
+        .collect())
+}
+
+async fn delete_term_row(
+    db: &sea_orm::DatabaseConnection,
+    term_id: u64,
+    taxonomy: &str,
+) -> Result<bool, String> {
+    use sea_orm::{ColumnTrait, EntityTrait, ModelTrait, QueryFilter};
+    if !oxidepress_php::term_taxonomy_allowed(taxonomy) {
+        return Err("taxonomy is not allowed".to_string());
+    }
+    let Some(row) = oxidepress_db::entities::wp_term_taxonomy::Entity::find()
+        .filter(oxidepress_db::entities::wp_term_taxonomy::Column::TermId.eq(term_id))
+        .filter(oxidepress_db::entities::wp_term_taxonomy::Column::Taxonomy.eq(taxonomy))
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Ok(false);
+    };
+    oxidepress_db::entities::wp_term_relationships::Entity::delete_many()
+        .filter(
+            oxidepress_db::entities::wp_term_relationships::Column::TermTaxonomyId
+                .eq(row.term_taxonomy_id),
+        )
+        .exec(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    row.delete(db).await.map_err(|err| err.to_string())?;
+    oxidepress_db::entities::wp_terms::Entity::delete_by_id(term_id)
+        .exec(db)
+        .await
+        .map_err(|err| err.to_string())?;
+    Ok(true)
 }
 
 fn stored_post(

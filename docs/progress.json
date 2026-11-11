@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, register a taxonomy, run its activation hook once, see the signed-in role, and be deactivated without stopping the others.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, register a taxonomy, store and assign terms, run its activation hook once, see the signed-in role, and be deactivated without stopping the others.",
   "done": [
     {
       "id": "single-site-plan",
@@ -90,6 +90,13 @@
       "crate": "oxidepress-php",
       "commit": "156c559",
       "note": "A show_ui taxonomy is listed at /wp-admin/edit-tags.php?taxonomy={name}. category, post_tag, nav_menu, link_category, and post_format stay reserved."
+    },
+    {
+      "id": "term-storage",
+      "title": "Store a term and assign it to a post",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "wp_insert_term writes wp_terms for a plugin taxonomy, category, or post_tag. wp_set_object_terms assigns those terms. nav_menu stays refused. The worker reads at most 200 terms in one taxonomy and returns 40."
     },
     {
       "id": "activation-callbacks",

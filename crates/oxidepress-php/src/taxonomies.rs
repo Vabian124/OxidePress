@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to let plugins register a taxonomy.
+// Modified by Vabian124 on 2026-11-11 to let plugins store and assign terms.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! Taxonomies a PHP plugin may register.
@@ -35,6 +35,103 @@ pub struct RegisteredTaxonomy {
 /// Whether a plugin may register this taxonomy name.
 pub fn taxonomy_name_allowed(name: &str) -> bool {
     worker_token(name, 32) && !RESERVED.contains(&name)
+}
+
+/// Whether a plugin may store a term in this taxonomy.
+///
+/// Categories and tags are real content. Navigation menus and post formats are not.
+pub fn term_taxonomy_allowed(name: &str) -> bool {
+    matches!(name, "category" | "post_tag") || taxonomy_name_allowed(name)
+}
+
+/// One term a plugin wants to store.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermDraft {
+    pub taxonomy: String,
+    pub name: String,
+    pub slug: String,
+    pub description: String,
+    pub parent: u64,
+}
+
+/// One stored term.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TermRecord {
+    pub term_id: u64,
+    pub term_taxonomy_id: u64,
+    pub taxonomy: String,
+    pub name: String,
+    pub slug: String,
+    pub description: String,
+    pub parent: u64,
+    pub count: i64,
+}
+
+pub fn term_draft_from_value(value: Option<&Value>) -> Result<TermDraft, String> {
+    let Some(value) = value else {
+        return Err("term is missing".to_string());
+    };
+    let taxonomy = text(value, "taxonomy");
+    if !term_taxonomy_allowed(&taxonomy) {
+        return Err("taxonomy is not allowed".to_string());
+    }
+    let name = plain(&text(value, "name"), 200);
+    if name.is_empty() {
+        return Err("term name is empty".to_string());
+    }
+    let explicit = text(value, "slug");
+    let slug = slug(if explicit.is_empty() {
+        &name
+    } else {
+        &explicit
+    });
+    if slug.is_empty() {
+        return Err("term slug is empty".to_string());
+    }
+    let mut description = text(value, "description");
+    if description.len() > 10_000 {
+        description.truncate(10_000);
+    }
+    description.retain(|ch| ch != '\0');
+    let parent = value.get("parent").and_then(Value::as_u64).unwrap_or(0);
+    Ok(TermDraft {
+        taxonomy,
+        name,
+        slug,
+        description,
+        parent,
+    })
+}
+
+pub fn term_json(term: &TermRecord) -> Value {
+    serde_json::json!({
+        "term_id": term.term_id,
+        "term_taxonomy_id": term.term_taxonomy_id,
+        "taxonomy": term.taxonomy,
+        "name": term.name,
+        "slug": term.slug,
+        "description": term.description,
+        "parent": term.parent,
+        "count": term.count,
+    })
+}
+
+fn slug(source: &str) -> String {
+    let mut out = String::new();
+    let mut dash = false;
+    for ch in source.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+            dash = false;
+        } else if !dash && !out.is_empty() {
+            out.push('-');
+            dash = true;
+        }
+        if out.len() >= 200 {
+            break;
+        }
+    }
+    out.trim_matches('-').to_string()
 }
 
 pub fn taxonomy_from_value(value: &Value) -> Option<RegisteredTaxonomy> {
@@ -143,5 +240,20 @@ mod tests {
             "object_types": ["revision"],
         }))
         .is_none());
+        assert!(term_taxonomy_allowed("category"));
+        assert!(term_taxonomy_allowed("venue"));
+        assert!(!term_taxonomy_allowed("nav_menu"));
+        let term = term_draft_from_value(Some(&json!({
+            "taxonomy": "venue",
+            "name": "Oslo<script>",
+            "slug": "",
+        })))
+        .unwrap();
+        assert_eq!(term.slug, "oslo-script");
+        assert!(term_draft_from_value(Some(&json!({
+            "taxonomy": "nav_menu",
+            "name": "Main",
+        })))
+        .is_err());
     }
 }

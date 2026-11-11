@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-11 to register a plugin taxonomy.
+// Modified by Vabian124 on 2026-11-11 to store and assign terms from a plugin.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -1440,6 +1440,179 @@ function delete_post_meta($post_id, $meta_key, $meta_value = '')
         'post_id' => $id,
         'meta_key' => $key,
         'prev' => $prev,
+    ));
+}
+
+class WP_Term
+{
+    public $term_id = 0;
+    public $term_taxonomy_id = 0;
+    public $name = '';
+    public $slug = '';
+    public $taxonomy = '';
+    public $description = '';
+    public $parent = 0;
+    public $count = 0;
+}
+
+function oxidepress_term_from_row($row)
+{
+    if (!is_array($row) || !isset($row['term_id'])) {
+        return null;
+    }
+    $term = new WP_Term();
+    $term->term_id = (int)$row['term_id'];
+    $term->term_taxonomy_id = isset($row['term_taxonomy_id']) ? (int)$row['term_taxonomy_id'] : 0;
+    $term->name = isset($row['name']) ? (string)$row['name'] : '';
+    $term->slug = isset($row['slug']) ? (string)$row['slug'] : '';
+    $term->taxonomy = isset($row['taxonomy']) ? (string)$row['taxonomy'] : '';
+    $term->description = isset($row['description']) ? (string)$row['description'] : '';
+    $term->parent = isset($row['parent']) ? (int)$row['parent'] : 0;
+    $term->count = isset($row['count']) ? (int)$row['count'] : 0;
+    return $term;
+}
+
+function wp_insert_term($term, $taxonomy, $args = array())
+{
+    $name = oxidepress_text($term);
+    $taxonomy = sanitize_key($taxonomy);
+    if ($name === '' || $taxonomy === '') {
+        return new WP_Error('invalid_term', 'term is not allowed');
+    }
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $row = oxidepress_call('insert_term', array('term' => array(
+        'taxonomy' => $taxonomy,
+        'name' => $name,
+        'slug' => isset($args['slug']) ? (string)$args['slug'] : '',
+        'description' => isset($args['description']) ? (string)$args['description'] : '',
+        'parent' => isset($args['parent']) ? (int)$args['parent'] : 0,
+    )));
+    if (!is_array($row) || !isset($row['term_id'])) {
+        return new WP_Error('term_exists', 'term was not stored');
+    }
+    return array(
+        'term_id' => (int)$row['term_id'],
+        'term_taxonomy_id' => isset($row['term_taxonomy_id']) ? (int)$row['term_taxonomy_id'] : 0,
+    );
+}
+
+function get_terms($args = array(), $deprecated = '')
+{
+    if (is_string($args)) {
+        $args = array('taxonomy' => $args);
+    }
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $taxonomy = isset($args['taxonomy']) ? sanitize_key($args['taxonomy']) : '';
+    if ($taxonomy === '') {
+        return array();
+    }
+    $rows = oxidepress_call('get_terms', array('taxonomy' => $taxonomy));
+    if (!is_array($rows)) {
+        return array();
+    }
+    $name = isset($args['name']) ? (string)$args['name'] : '';
+    $terms = array();
+    foreach ($rows as $row) {
+        $term = oxidepress_term_from_row($row);
+        if (!$term) {
+            continue;
+        }
+        if ($name !== '' && $term->name !== $name) {
+            continue;
+        }
+        $terms[] = $term;
+        $limit = isset($args['number']) ? (int)$args['number'] : 40;
+        if ($limit > 0 && count($terms) >= $limit) {
+            break;
+        }
+    }
+    return $terms;
+}
+
+function wp_set_object_terms($object_id, $terms, $taxonomy, $append = false)
+{
+    $id = (int)$object_id;
+    $taxonomy = sanitize_key($taxonomy);
+    if ($id <= 0 || $taxonomy === '') {
+        return new WP_Error('invalid_term', 'term is not allowed');
+    }
+    if (!is_array($terms)) {
+        $terms = array($terms);
+    }
+    $ids = array();
+    foreach ($terms as $term) {
+        if (count($ids) >= 20) {
+            break;
+        }
+        if (is_int($term) || (is_string($term) && ctype_digit($term))) {
+            $ids[] = (int)$term;
+            continue;
+        }
+        $name = oxidepress_text($term);
+        if ($name === '') {
+            continue;
+        }
+        $existing = get_terms(array('taxonomy' => $taxonomy, 'name' => $name, 'number' => 1));
+        if ($existing) {
+            $ids[] = (int)$existing[0]->term_id;
+            continue;
+        }
+        $created = wp_insert_term($name, $taxonomy);
+        if (is_array($created) && isset($created['term_id'])) {
+            $ids[] = (int)$created['term_id'];
+        }
+    }
+    $ok = oxidepress_call('set_object_terms', array(
+        'post_id' => $id,
+        'taxonomy' => $taxonomy,
+        'terms' => $ids,
+        'append' => (bool)$append,
+    ));
+    if (!$ok) {
+        return new WP_Error('invalid_term', 'terms were not assigned');
+    }
+    return $ids;
+}
+
+function wp_get_object_terms($object_ids, $taxonomies, $args = array())
+{
+    $id = is_array($object_ids) ? (int)reset($object_ids) : (int)$object_ids;
+    $taxonomy = is_array($taxonomies) ? (string)reset($taxonomies) : (string)$taxonomies;
+    $taxonomy = sanitize_key($taxonomy);
+    if ($id <= 0 || $taxonomy === '') {
+        return array();
+    }
+    $rows = oxidepress_call('object_terms', array(
+        'post_id' => $id,
+        'taxonomy' => $taxonomy,
+    ));
+    if (!is_array($rows)) {
+        return array();
+    }
+    $terms = array();
+    foreach ($rows as $row) {
+        $term = oxidepress_term_from_row($row);
+        if ($term) {
+            $terms[] = $term;
+        }
+    }
+    return $terms;
+}
+
+function wp_delete_term($term, $taxonomy, $args = array())
+{
+    $id = (int)$term;
+    $taxonomy = sanitize_key($taxonomy);
+    if ($id <= 0 || $taxonomy === '') {
+        return false;
+    }
+    return (bool)oxidepress_call('delete_term', array(
+        'term_id' => $id,
+        'taxonomy' => $taxonomy,
     ));
 }
 

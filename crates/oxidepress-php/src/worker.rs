@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to report taxonomies a plugin registered.
+// Modified by Vabian124 on 2026-11-11 to store and assign terms from a plugin.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -93,6 +93,45 @@ pub trait PhpHost: Send + Sync {
     fn delete_post_meta(&self, post_id: u64, key: &str, prev: &str) -> Result<bool, String> {
         let _ = (post_id, key, prev);
         Err("post meta is not available".to_string())
+    }
+
+    /// Insert one term. The default has no term store.
+    fn insert_term(
+        &self,
+        draft: &crate::taxonomies::TermDraft,
+    ) -> Result<crate::taxonomies::TermRecord, String> {
+        let _ = draft;
+        Err("terms are not available".to_string())
+    }
+
+    /// List terms in one taxonomy.
+    fn get_terms(&self, taxonomy: &str) -> Vec<crate::taxonomies::TermRecord> {
+        let _ = taxonomy;
+        Vec::new()
+    }
+
+    /// Replace or append the terms on one post.
+    fn set_object_terms(
+        &self,
+        post_id: u64,
+        taxonomy: &str,
+        term_ids: &[u64],
+        append: bool,
+    ) -> Result<(), String> {
+        let _ = (post_id, taxonomy, term_ids, append);
+        Err("terms are not available".to_string())
+    }
+
+    /// Terms already assigned to one post.
+    fn object_terms(&self, post_id: u64, taxonomy: &str) -> Vec<crate::taxonomies::TermRecord> {
+        let _ = (post_id, taxonomy);
+        Vec::new()
+    }
+
+    /// Delete one term and its assignments.
+    fn delete_term(&self, term_id: u64, taxonomy: &str) -> Result<bool, String> {
+        let _ = (term_id, taxonomy);
+        Err("terms are not available".to_string())
     }
 
     /// True while the host is drawing an admin screen.
@@ -926,6 +965,57 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             let prev = json_scalar_string(frame.get("prev"));
             Value::Bool(host.delete_post_meta(id, key, &prev).unwrap_or(false))
         }
+        Some("insert_term") => match crate::taxonomies::term_draft_from_value(frame.get("term")) {
+            Ok(draft) => match host.insert_term(&draft) {
+                Ok(term) => crate::taxonomies::term_json(&term),
+                Err(_) => Value::Null,
+            },
+            Err(_) => Value::Null,
+        },
+        Some("get_terms") => {
+            let taxonomy = frame.get("taxonomy").and_then(Value::as_str).unwrap_or("");
+            Value::Array(
+                host.get_terms(taxonomy)
+                    .iter()
+                    .map(crate::taxonomies::term_json)
+                    .collect(),
+            )
+        }
+        Some("set_object_terms") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let taxonomy = frame.get("taxonomy").and_then(Value::as_str).unwrap_or("");
+            let append = frame
+                .get("append")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            let ids = frame
+                .get("terms")
+                .and_then(Value::as_array)
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_u64)
+                        .take(20)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            Value::Bool(host.set_object_terms(id, taxonomy, &ids, append).is_ok())
+        }
+        Some("object_terms") => {
+            let id = frame.get("post_id").and_then(Value::as_u64).unwrap_or(0);
+            let taxonomy = frame.get("taxonomy").and_then(Value::as_str).unwrap_or("");
+            Value::Array(
+                host.object_terms(id, taxonomy)
+                    .iter()
+                    .map(crate::taxonomies::term_json)
+                    .collect(),
+            )
+        }
+        Some("delete_term") => {
+            let id = frame.get("term_id").and_then(Value::as_u64).unwrap_or(0);
+            let taxonomy = frame.get("taxonomy").and_then(Value::as_str).unwrap_or("");
+            Value::Bool(host.delete_term(id, taxonomy).unwrap_or(false))
+        }
         Some("is_admin") => Value::Bool(host.is_admin()),
         Some("current_user_can") => {
             let capability = frame
@@ -974,7 +1064,10 @@ mod tests {
         http: Mutex<Vec<crate::http::HttpRequest>>,
         posts: Mutex<Vec<crate::posts::PostRecord>>,
         meta: Mutex<Vec<StoredMeta>>,
+        terms: Mutex<Vec<crate::taxonomies::TermRecord>>,
+        rels: Mutex<Vec<(u64, u64)>>,
         next_post: Mutex<u64>,
+        next_term: Mutex<u64>,
         admin: bool,
         caps: Vec<String>,
     }
@@ -986,7 +1079,10 @@ mod tests {
                 http: Mutex::new(Vec::new()),
                 posts: Mutex::new(Vec::new()),
                 meta: Mutex::new(Vec::new()),
+                terms: Mutex::new(Vec::new()),
+                rels: Mutex::new(Vec::new()),
                 next_post: Mutex::new(1),
+                next_term: Mutex::new(1),
                 admin: false,
                 caps: Vec::new(),
             }
@@ -1219,6 +1315,162 @@ mod tests {
                     && (prev.is_empty() || row.value == prev))
             });
             Ok(meta.len() != before)
+        }
+
+        fn insert_term(
+            &self,
+            draft: &crate::taxonomies::TermDraft,
+        ) -> Result<crate::taxonomies::TermRecord, String> {
+            if !crate::taxonomies::term_taxonomy_allowed(&draft.taxonomy) {
+                return Err("taxonomy is not allowed".to_string());
+            }
+            let mut terms = self.terms.lock().unwrap();
+            if terms.iter().any(|term| {
+                term.taxonomy == draft.taxonomy && term.name.eq_ignore_ascii_case(&draft.name)
+            }) {
+                return Err("term exists".to_string());
+            }
+            let parent = if draft.parent > 0
+                && terms
+                    .iter()
+                    .any(|term| term.term_id == draft.parent && term.taxonomy == draft.taxonomy)
+            {
+                draft.parent
+            } else {
+                0
+            };
+            let mut slug = draft.slug.clone();
+            let mut suffix = 2u32;
+            while terms
+                .iter()
+                .any(|term| term.taxonomy == draft.taxonomy && term.slug == slug)
+            {
+                slug = format!("{}-{suffix}", draft.slug);
+                suffix += 1;
+                if suffix > 20 {
+                    break;
+                }
+            }
+            let mut next = self.next_term.lock().unwrap();
+            let id = *next;
+            *next += 1;
+            let term = crate::taxonomies::TermRecord {
+                term_id: id,
+                term_taxonomy_id: id,
+                taxonomy: draft.taxonomy.clone(),
+                name: draft.name.clone(),
+                slug,
+                description: draft.description.clone(),
+                parent,
+                count: 0,
+            };
+            terms.push(term.clone());
+            Ok(term)
+        }
+
+        fn get_terms(&self, taxonomy: &str) -> Vec<crate::taxonomies::TermRecord> {
+            if !crate::taxonomies::term_taxonomy_allowed(taxonomy) {
+                return Vec::new();
+            }
+            let mut terms: Vec<_> = self
+                .terms
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|term| term.taxonomy == taxonomy)
+                .cloned()
+                .collect();
+            terms.sort_by(|left, right| left.name.cmp(&right.name));
+            terms.truncate(40);
+            terms
+        }
+
+        fn set_object_terms(
+            &self,
+            post_id: u64,
+            taxonomy: &str,
+            term_ids: &[u64],
+            append: bool,
+        ) -> Result<(), String> {
+            let post_type = self.post_type_of(post_id)?;
+            if !crate::posts::content_type_allowed(&post_type)
+                || !crate::taxonomies::term_taxonomy_allowed(taxonomy)
+            {
+                return Err("terms are not allowed".to_string());
+            }
+            let mut terms = self.terms.lock().unwrap();
+            let chosen: Vec<u64> = term_ids
+                .iter()
+                .copied()
+                .filter(|id| {
+                    terms
+                        .iter()
+                        .any(|term| term.term_id == *id && term.taxonomy == taxonomy)
+                })
+                .take(20)
+                .collect();
+            if chosen.len() != term_ids.len() {
+                return Err("term was not found".to_string());
+            }
+            let mut rels = self.rels.lock().unwrap();
+            let in_taxonomy = |taxonomy_id: u64| {
+                terms
+                    .iter()
+                    .any(|term| term.term_taxonomy_id == taxonomy_id && term.taxonomy == taxonomy)
+            };
+            if !append {
+                rels.retain(|(object_id, taxonomy_id)| {
+                    *object_id != post_id || !in_taxonomy(*taxonomy_id)
+                });
+            }
+            for id in &chosen {
+                if !rels
+                    .iter()
+                    .any(|(object_id, taxonomy_id)| *object_id == post_id && taxonomy_id == id)
+                {
+                    rels.push((post_id, *id));
+                }
+            }
+            for term in terms.iter_mut().filter(|term| term.taxonomy == taxonomy) {
+                term.count = rels
+                    .iter()
+                    .filter(|(_, taxonomy_id)| *taxonomy_id == term.term_taxonomy_id)
+                    .count() as i64;
+            }
+            Ok(())
+        }
+
+        fn object_terms(&self, post_id: u64, taxonomy: &str) -> Vec<crate::taxonomies::TermRecord> {
+            let terms = self.terms.lock().unwrap();
+            let rels = self.rels.lock().unwrap();
+            terms
+                .iter()
+                .filter(|term| {
+                    term.taxonomy == taxonomy
+                        && rels.iter().any(|(object_id, taxonomy_id)| {
+                            *object_id == post_id && *taxonomy_id == term.term_taxonomy_id
+                        })
+                })
+                .cloned()
+                .collect()
+        }
+
+        fn delete_term(&self, term_id: u64, taxonomy: &str) -> Result<bool, String> {
+            if !crate::taxonomies::term_taxonomy_allowed(taxonomy) {
+                return Err("taxonomy is not allowed".to_string());
+            }
+            let mut terms = self.terms.lock().unwrap();
+            let Some(index) = terms
+                .iter()
+                .position(|term| term.term_id == term_id && term.taxonomy == taxonomy)
+            else {
+                return Ok(false);
+            };
+            let taxonomy_id = terms[index].term_taxonomy_id;
+            terms.remove(index);
+            let mut rels = self.rels.lock().unwrap();
+            rels.retain(|(_, id)| *id != taxonomy_id);
+            Ok(true)
         }
 
         fn http_request(
@@ -1948,6 +2200,78 @@ add_action('init', function () {
         assert_eq!(host.get_option("tax_category").as_deref(), Some("yes"));
         assert_eq!(host.get_option("tax_menu").as_deref(), Some("refused"));
         assert_eq!(host.get_option("tax_revision").as_deref(), Some("refused"));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_store_a_term_and_assign_it() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-terms-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("terms");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("terms.php"),
+            r#"<?php
+/**
+ * Plugin Name: Terms
+ */
+add_action('init', function () {
+    register_taxonomy('venue', 'event', array(
+        'label' => 'Venues',
+        'public' => true,
+        'show_ui' => true,
+    ));
+    $id = wp_insert_post(array(
+        'post_title' => 'Launch',
+        'post_status' => 'publish',
+        'post_type' => 'event',
+    ));
+    $created = wp_insert_term('Oslo', 'venue');
+    update_option('term_id', is_array($created) ? (string)$created['term_id'] : '0');
+    $again = wp_insert_term('Oslo', 'venue');
+    update_option('term_again', $again instanceof WP_Error ? 'refused' : 'accepted');
+    $menu = wp_insert_term('Main', 'nav_menu');
+    update_option('term_menu', $menu instanceof WP_Error ? 'refused' : 'accepted');
+    $set = wp_set_object_terms($id, array('Oslo', 'Bergen'), 'venue');
+    update_option('term_set', is_array($set) ? (string)count($set) : '0');
+    $got = wp_get_object_terms($id, 'venue');
+    $names = array();
+    if (is_array($got)) {
+        foreach ($got as $term) {
+            $names[] = $term->name;
+        }
+    }
+    sort($names);
+    update_option('term_names', implode(',', $names));
+    wp_set_object_terms($id, array(), 'venue');
+    $after = wp_get_object_terms($id, 'venue');
+    update_option('term_cleared', is_array($after) ? (string)count($after) : 'bad');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found.iter().find(|plugin| plugin.name == "Terms").unwrap();
+        runtime.load(plugin).unwrap();
+        runtime.registered_taxonomies().unwrap();
+        assert_eq!(host.get_option("term_id").as_deref(), Some("1"));
+        assert_eq!(host.get_option("term_again").as_deref(), Some("refused"));
+        assert_eq!(host.get_option("term_menu").as_deref(), Some("refused"));
+        assert_eq!(host.get_option("term_set").as_deref(), Some("2"));
+        assert_eq!(
+            host.get_option("term_names").as_deref(),
+            Some("Bergen,Oslo")
+        );
+        assert_eq!(host.get_option("term_cleared").as_deref(), Some("0"));
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);
