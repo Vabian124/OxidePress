@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to let plugins read and write comments.
+// Modified by Vabian124 on 2026-11-11 to let plugins read and write term meta.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -162,6 +162,30 @@ pub trait PhpHost: Send + Sync {
     fn delete_comment(&self, id: u64, force: bool) -> Result<bool, String> {
         let _ = (id, force);
         Err("comments are not available".to_string())
+    }
+
+    /// Read term meta. An empty key returns every key for that term.
+    fn get_term_meta(&self, term_id: u64, key: &str) -> Vec<crate::posts::PostMeta> {
+        let _ = (term_id, key);
+        Vec::new()
+    }
+
+    /// Replace one term meta value, or insert it when the key is new.
+    fn update_term_meta(
+        &self,
+        term_id: u64,
+        key: &str,
+        value: &str,
+        prev: &str,
+    ) -> Result<bool, String> {
+        let _ = (term_id, key, value, prev);
+        Err("term meta is not available".to_string())
+    }
+
+    /// Delete term meta rows for one key.
+    fn delete_term_meta(&self, term_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+        let _ = (term_id, key, prev);
+        Err("term meta is not available".to_string())
     }
 
     /// True while the host is drawing an admin screen.
@@ -1078,6 +1102,32 @@ fn dispatch_host(host: &dyn PhpHost, frame: &Value) -> Value {
             let force = frame.get("force").and_then(Value::as_bool).unwrap_or(false);
             Value::Bool(host.delete_comment(id, force).unwrap_or(false))
         }
+        Some("get_term_meta") => {
+            let id = frame.get("term_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            Value::Array(
+                host.get_term_meta(id, key)
+                    .into_iter()
+                    .map(|row| json!({ "key": row.key, "value": row.value }))
+                    .collect(),
+            )
+        }
+        Some("update_term_meta") => {
+            let id = frame.get("term_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            let value = json_scalar_string(frame.get("value"));
+            let prev = json_scalar_string(frame.get("prev"));
+            Value::Bool(
+                host.update_term_meta(id, key, &value, &prev)
+                    .unwrap_or(false),
+            )
+        }
+        Some("delete_term_meta") => {
+            let id = frame.get("term_id").and_then(Value::as_u64).unwrap_or(0);
+            let key = frame.get("meta_key").and_then(Value::as_str).unwrap_or("");
+            let prev = json_scalar_string(frame.get("prev"));
+            Value::Bool(host.delete_term_meta(id, key, &prev).unwrap_or(false))
+        }
         Some("is_admin") => Value::Bool(host.is_admin()),
         Some("current_user_can") => {
             let capability = frame
@@ -1129,6 +1179,7 @@ mod tests {
         terms: Mutex<Vec<crate::taxonomies::TermRecord>>,
         rels: Mutex<Vec<(u64, u64)>>,
         comments: Mutex<Vec<crate::comments::CommentRecord>>,
+        term_meta: Mutex<Vec<StoredMeta>>,
         next_post: Mutex<u64>,
         next_term: Mutex<u64>,
         next_comment: Mutex<u64>,
@@ -1146,6 +1197,7 @@ mod tests {
                 terms: Mutex::new(Vec::new()),
                 rels: Mutex::new(Vec::new()),
                 comments: Mutex::new(Vec::new()),
+                term_meta: Mutex::new(Vec::new()),
                 next_post: Mutex::new(1),
                 next_term: Mutex::new(1),
                 next_comment: Mutex::new(1),
@@ -1195,6 +1247,56 @@ mod tests {
             {
                 post.comment_count = count;
             }
+        }
+
+        fn term_taxonomy_of(&self, id: u64) -> Result<String, String> {
+            self.terms
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|term| term.term_id == id)
+                .map(|term| term.taxonomy.clone())
+                .ok_or_else(|| "term was not found".to_string())
+        }
+
+        fn write_term_meta(
+            &self,
+            term_id: u64,
+            key: &str,
+            value: &str,
+            prev: &str,
+            always_insert: bool,
+        ) -> Result<bool, String> {
+            let taxonomy = self.term_taxonomy_of(term_id)?;
+            if !crate::taxonomies::term_taxonomy_allowed(&taxonomy)
+                || !crate::posts::meta_key_allowed(key)
+            {
+                return Err("term meta is not allowed".to_string());
+            }
+            let value = crate::posts::clean_meta_value(value);
+            let mut meta = self.term_meta.lock().unwrap();
+            if !always_insert {
+                if let Some(row) = meta.iter_mut().find(|row| {
+                    row.post_id == term_id
+                        && row.key == key
+                        && (prev.is_empty() || row.value == prev)
+                }) {
+                    row.value = value;
+                    return Ok(true);
+                }
+                if !prev.is_empty() {
+                    return Ok(false);
+                }
+            }
+            if meta.iter().filter(|row| row.post_id == term_id).count() >= 100 {
+                return Err("too much term meta".to_string());
+            }
+            meta.push(StoredMeta {
+                post_id: term_id,
+                key: key.to_string(),
+                value,
+            });
+            Ok(true)
         }
 
         fn write_meta(
@@ -1634,6 +1736,50 @@ mod tests {
             drop(comments);
             self.recount_comments(post_id);
             Ok(true)
+        }
+
+        fn get_term_meta(&self, term_id: u64, key: &str) -> Vec<crate::posts::PostMeta> {
+            if self.term_taxonomy_of(term_id).is_err() {
+                return Vec::new();
+            }
+            self.term_meta
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|row| row.post_id == term_id && (key.is_empty() || row.key == key))
+                .take(if key.is_empty() { 100 } else { 20 })
+                .map(|row| crate::posts::PostMeta {
+                    key: row.key.clone(),
+                    value: row.value.clone(),
+                })
+                .collect()
+        }
+
+        fn update_term_meta(
+            &self,
+            term_id: u64,
+            key: &str,
+            value: &str,
+            prev: &str,
+        ) -> Result<bool, String> {
+            self.write_term_meta(term_id, key, value, prev, false)
+        }
+
+        fn delete_term_meta(&self, term_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+            let taxonomy = self.term_taxonomy_of(term_id)?;
+            if !crate::taxonomies::term_taxonomy_allowed(&taxonomy)
+                || !crate::posts::meta_key_allowed(key)
+            {
+                return Err("term meta is not allowed".to_string());
+            }
+            let mut meta = self.term_meta.lock().unwrap();
+            let before = meta.len();
+            meta.retain(|row| {
+                !(row.post_id == term_id
+                    && row.key == key
+                    && (prev.is_empty() || row.value == prev))
+            });
+            Ok(meta.len() != before)
         }
 
         fn http_request(
@@ -2520,6 +2666,62 @@ add_action('init', function () {
         assert_eq!(host.get_option("comment_trashed").as_deref(), Some("trash"));
         let post = host.get_post(1).unwrap();
         assert_eq!(post.comment_count, 0);
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_read_and_write_term_meta() {
+        if !php_bin_works() {
+            return;
+        }
+        let root =
+            std::env::temp_dir().join(format!("oxidepress-term-meta-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("term-meta");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("term-meta.php"),
+            r#"<?php
+/**
+ * Plugin Name: Term Meta
+ */
+add_action('init', function () {
+    register_taxonomy('venue', 'post', array(
+        'label' => 'Venues',
+        'public' => true,
+        'show_ui' => true,
+    ));
+    $created = wp_insert_term('Oslo', 'venue');
+    $id = is_array($created) ? (int)$created['term_id'] : 0;
+    update_option('term_meta_saved', update_term_meta($id, 'city', 'Oslo') ? 'yes' : 'no');
+    update_option('term_meta_city', (string)get_term_meta($id, 'city', true));
+    update_option('term_meta_array', update_term_meta($id, 'city', array('no')) ? 'yes' : 'no');
+    update_option('term_meta_missing', update_term_meta(999, 'city', 'x') ? 'yes' : 'no');
+    update_option('term_meta_deleted', delete_term_meta($id, 'city') ? 'yes' : 'no');
+    update_option('term_meta_after', (string)get_term_meta($id, 'city', true));
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found
+            .iter()
+            .find(|plugin| plugin.name == "Term Meta")
+            .unwrap();
+        runtime.load(plugin).unwrap();
+        runtime.registered_taxonomies().unwrap();
+        assert_eq!(host.get_option("term_meta_saved").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("term_meta_city").as_deref(), Some("Oslo"));
+        assert_eq!(host.get_option("term_meta_array").as_deref(), Some("no"));
+        assert_eq!(host.get_option("term_meta_missing").as_deref(), Some("no"));
+        assert_eq!(host.get_option("term_meta_deleted").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("term_meta_after").as_deref(), Some(""));
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);

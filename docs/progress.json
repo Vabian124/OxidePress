@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, register a taxonomy, store and assign terms, store a comment, run its activation hook once, see the signed-in role, and be deactivated without stopping the others.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, register a taxonomy, store and assign terms, store a comment, read and write term meta, run its activation hook once, see the signed-in role, and be deactivated without stopping the others.",
   "done": [
     {
       "id": "single-site-plan",
@@ -104,7 +104,15 @@
       "title": "Store a comment from a dropped-in plugin",
       "status": "done",
       "crate": "oxidepress-php",
+      "commit": "69dbf77",
       "note": "wp_insert_comment writes wp_comments. The default status is hold. A missing post or a bad email is refused. Trashing a comment removes it from the approved count."
+    },
+    {
+      "id": "term-meta",
+      "title": "get_term_meta and update_term_meta for a dropped-in plugin",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "delete_term_meta is included. Values are text. An array is refused. A missing term or a nav_menu term is not written."
     },
     {
       "id": "activation-callbacks",

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-11 to store comments a plugin attaches to a post.
+// Modified by Vabian124 on 2026-11-11 to store term meta a plugin writes.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -1011,6 +1011,148 @@ impl PhpHost for OptionHost {
         let db = self.db.clone();
         block_on_host(async move { delete_comment_row(&db, id, force).await })
     }
+
+    fn get_term_meta(&self, term_id: u64, key: &str) -> Vec<oxidepress_php::PostMeta> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        let db = self.db.clone();
+        let key = key.to_string();
+        block_on_host(async move {
+            if term_taxonomy_allowed_row(&db, term_id).await.is_err() {
+                return Vec::new();
+            }
+            let mut finder = oxidepress_db::entities::wp_termmeta::Entity::find()
+                .filter(oxidepress_db::entities::wp_termmeta::Column::TermId.eq(term_id));
+            if !key.is_empty() {
+                finder =
+                    finder.filter(oxidepress_db::entities::wp_termmeta::Column::MetaKey.eq(key));
+            }
+            finder
+                .all(&db)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|row| {
+                    Some(oxidepress_php::PostMeta {
+                        key: row.meta_key?,
+                        value: row.meta_value.unwrap_or_default(),
+                    })
+                })
+                .take(100)
+                .collect()
+        })
+    }
+
+    fn update_term_meta(
+        &self,
+        term_id: u64,
+        key: &str,
+        value: &str,
+        prev: &str,
+    ) -> Result<bool, String> {
+        write_term_meta(self, term_id, key, value, prev, false)
+    }
+
+    fn delete_term_meta(&self, term_id: u64, key: &str, prev: &str) -> Result<bool, String> {
+        use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+        if !oxidepress_php::meta_key_allowed(key) {
+            return Err("term meta is not allowed".to_string());
+        }
+        let db = self.db.clone();
+        let key = key.to_string();
+        let prev = prev.to_string();
+        block_on_host(async move {
+            term_taxonomy_allowed_row(&db, term_id).await?;
+            let mut delete = oxidepress_db::entities::wp_termmeta::Entity::delete_many()
+                .filter(oxidepress_db::entities::wp_termmeta::Column::TermId.eq(term_id))
+                .filter(oxidepress_db::entities::wp_termmeta::Column::MetaKey.eq(key));
+            if !prev.is_empty() {
+                delete =
+                    delete.filter(oxidepress_db::entities::wp_termmeta::Column::MetaValue.eq(prev));
+            }
+            let result = delete.exec(&db).await.map_err(|err| err.to_string())?;
+            Ok(result.rows_affected > 0)
+        })
+    }
+}
+
+async fn term_taxonomy_allowed_row(
+    db: &sea_orm::DatabaseConnection,
+    term_id: u64,
+) -> Result<(), String> {
+    use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+    let Some(row) = oxidepress_db::entities::wp_term_taxonomy::Entity::find()
+        .filter(oxidepress_db::entities::wp_term_taxonomy::Column::TermId.eq(term_id))
+        .one(db)
+        .await
+        .map_err(|err| err.to_string())?
+    else {
+        return Err("term was not found".to_string());
+    };
+    if oxidepress_php::term_taxonomy_allowed(&row.taxonomy) {
+        Ok(())
+    } else {
+        Err("taxonomy is not allowed".to_string())
+    }
+}
+
+fn write_term_meta(
+    host: &OptionHost,
+    term_id: u64,
+    key: &str,
+    value: &str,
+    prev: &str,
+    always_insert: bool,
+) -> Result<bool, String> {
+    use sea_orm::{ActiveModelTrait, ColumnTrait, EntityTrait, QueryFilter, Set};
+    if !oxidepress_php::meta_key_allowed(key) {
+        return Err("term meta is not allowed".to_string());
+    }
+    let db = host.db.clone();
+    let key = key.to_string();
+    let value = oxidepress_php::clean_meta_value(value);
+    let prev = prev.to_string();
+    block_on_host(async move {
+        term_taxonomy_allowed_row(&db, term_id).await?;
+        if !always_insert {
+            let existing = oxidepress_db::entities::wp_termmeta::Entity::find()
+                .filter(oxidepress_db::entities::wp_termmeta::Column::TermId.eq(term_id))
+                .filter(oxidepress_db::entities::wp_termmeta::Column::MetaKey.eq(key.clone()))
+                .all(&db)
+                .await
+                .map_err(|err| err.to_string())?;
+            if let Some(row) = existing
+                .into_iter()
+                .find(|row| prev.is_empty() || row.meta_value.as_deref() == Some(prev.as_str()))
+            {
+                let mut active: oxidepress_db::entities::wp_termmeta::ActiveModel = row.into();
+                active.meta_value = Set(Some(value));
+                active.update(&db).await.map_err(|err| err.to_string())?;
+                return Ok(true);
+            }
+            if !prev.is_empty() {
+                return Ok(false);
+            }
+        }
+        let count = oxidepress_db::entities::wp_termmeta::Entity::find()
+            .filter(oxidepress_db::entities::wp_termmeta::Column::TermId.eq(term_id))
+            .all(&db)
+            .await
+            .map_err(|err| err.to_string())?
+            .len();
+        if count >= 100 {
+            return Err("too much term meta".to_string());
+        }
+        oxidepress_db::entities::wp_termmeta::ActiveModel {
+            term_id: Set(term_id),
+            meta_key: Set(Some(key)),
+            meta_value: Set(Some(value)),
+            ..Default::default()
+        }
+        .insert(&db)
+        .await
+        .map_err(|err| err.to_string())?;
+        Ok(true)
+    })
 }
 
 fn comment_record(

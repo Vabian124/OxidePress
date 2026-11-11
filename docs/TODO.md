@@ -33,7 +33,8 @@ None. The open list is empty.
 - `get_post_meta`, `update_post_meta`, `add_post_meta`, and `delete_post_meta` read and write `wp_postmeta`. A value has to be text. An array is refused. `ff248f8`.
 - `register_taxonomy` adds a `show_ui` taxonomy to the admin list at `/wp-admin/edit-tags.php?taxonomy={name}`. `category`, `post_tag`, `nav_menu`, and `post_format` stay reserved. `156c559`.
 - `wp_insert_term` stores a term in a plugin taxonomy, `category`, or `post_tag`. `wp_set_object_terms` assigns those terms to a post. `nav_menu` stays refused. `551d99b`.
-- `wp_insert_comment` stores a comment on an allowed post. The default status is hold. A missing post or a bad email is refused.
+- `wp_insert_comment` stores a comment on an allowed post. The default status is hold. A missing post or a bad email is refused. `69dbf77`.
+- `get_term_meta`, `update_term_meta`, and `delete_term_meta` read and write `wp_termmeta`. A value has to be text. An array, a missing term, and `nav_menu` are refused.
 - `register_activation_hook` runs once when an administrator activates that plugin. Boot does not run it again.
 - `is_admin()` follows `/wp-admin` and `/wp-login.php`. `current_user_can()` follows the signed-in role. A visitor is false.
 - Deactivating one plugin stops its hooks and shortcodes. The other plugins keep running.
