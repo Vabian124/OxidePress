@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to drop one plugin's hooks without a restart.
+// Modified by Vabian124 on 2026-11-11 to adopt taxonomies a plugin registered.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! The long-lived PHP worker and the plugins it has included.
@@ -15,6 +15,7 @@ use std::sync::{Arc, Mutex};
 use oxidepress_core::hooks::HookRegistry;
 use oxidepress_core::post_type::{PostTypeArgs, PostTypeLabels, PostTypeRegistry};
 use oxidepress_core::shortcode::ShortcodeRegistry;
+use oxidepress_core::taxonomy::{TaxonomyArgs, TaxonomyLabels, TaxonomyRegistry};
 use oxidepress_php::{DiscoveredPlugin, LoadedPlugin, PhpHost, PhpRuntime};
 use oxidepress_plugins::registry::{PluginEntry, PluginType};
 
@@ -90,6 +91,7 @@ impl PhpWorkers {
         hooks: &HookRegistry,
         shortcodes: &ShortcodeRegistry,
         post_types: &PostTypeRegistry,
+        taxonomies: &TaxonomyRegistry,
     ) -> Result<(), String> {
         if entry.meta.plugin_type != PluginType::Php {
             return Ok(());
@@ -99,6 +101,7 @@ impl PhpWorkers {
             .ok_or_else(|| "PHP plugin worker did not start".to_string())?;
         self.include(&runtime, entry, hooks, shortcodes, true)?;
         self.adopt_post_types(&runtime, post_types);
+        self.adopt_taxonomies(&runtime, taxonomies);
         Ok(())
     }
 
@@ -127,6 +130,45 @@ impl PhpWorkers {
                         ..Default::default()
                     },
                     public: kind.public,
+                    show_ui: kind.show_ui,
+                    show_in_menu: kind.show_in_menu,
+                    show_in_rest: kind.show_ui,
+                    ..Default::default()
+                },
+                false,
+            );
+        }
+    }
+
+    pub fn adopt_taxonomies(&self, runtime: &PhpRuntime, taxonomies: &TaxonomyRegistry) {
+        let kinds = match runtime.registered_taxonomies() {
+            Ok(kinds) => kinds,
+            Err(error) => {
+                tracing::warn!(%error, "PHP taxonomies were not loaded");
+                return;
+            }
+        };
+        for kind in kinds {
+            if taxonomies
+                .get(&kind.name)
+                .is_some_and(|existing| existing.builtin)
+            {
+                continue;
+            }
+            let label = kind.label.clone();
+            taxonomies.register(
+                &kind.name,
+                kind.object_types,
+                TaxonomyArgs {
+                    label: label.clone(),
+                    labels: TaxonomyLabels {
+                        name: label.clone(),
+                        singular_name: kind.singular,
+                        menu_name: label,
+                        ..Default::default()
+                    },
+                    public: kind.public,
+                    hierarchical: kind.hierarchical,
                     show_ui: kind.show_ui,
                     show_in_menu: kind.show_in_menu,
                     show_in_rest: kind.show_ui,

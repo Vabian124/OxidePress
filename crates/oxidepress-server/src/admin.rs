@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to boot a PHP plugin when it is activated.
+// Modified by Vabian124 on 2026-11-11 to adopt taxonomies when a plugin is activated.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::Router;
@@ -19,10 +19,13 @@ pub fn create_admin_routes(state: &Arc<AppState>) -> Router {
         jwt: state.jwt.clone(),
         plugin_registry: state.plugin_registry.clone(),
         plugin_lifecycle: Some(Arc::new(move |entry, change| match change {
-            oxidepress_admin::PluginChange::Activated => {
-                app.php_runtime
-                    .activate(&entry, &app.hooks, &app.shortcodes, &app.post_types)
-            }
+            oxidepress_admin::PluginChange::Activated => app.php_runtime.activate(
+                &entry,
+                &app.hooks,
+                &app.shortcodes,
+                &app.post_types,
+                &app.taxonomies,
+            ),
             oxidepress_admin::PluginChange::Deactivated => app.php_runtime.deactivate(&entry),
         })),
     };

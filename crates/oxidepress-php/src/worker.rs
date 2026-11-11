@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to let plugins read and write post meta.
+// Modified by Vabian124 on 2026-11-11 to report taxonomies a plugin registered.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //! PHP process supervisor.
@@ -465,6 +465,21 @@ impl PhpRuntime {
         Ok(types
             .iter()
             .filter_map(crate::posts::type_from_value)
+            .collect())
+    }
+
+    /// Taxonomies plugins registered, after `init` has run once inside the worker.
+    pub fn registered_taxonomies(
+        &self,
+    ) -> Result<Vec<crate::taxonomies::RegisteredTaxonomy>, PhpError> {
+        let frame = self.roundtrip(json!({ "op": "taxonomies" }))?;
+        ensure_ok(&frame)?;
+        let Some(items) = frame.get("taxonomies").and_then(Value::as_array) else {
+            return Ok(Vec::new());
+        };
+        Ok(items
+            .iter()
+            .filter_map(crate::taxonomies::taxonomy_from_value)
             .collect())
     }
 
@@ -1874,6 +1889,65 @@ add_action('init', function () {
         assert_eq!(host.get_option("meta_deleted").as_deref(), Some("yes"));
         assert_eq!(host.get_option("meta_after").as_deref(), Some(""));
         assert_eq!(host.get_option("meta_missing").as_deref(), Some("no"));
+        assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
+        drop(runtime);
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn php_plugin_can_register_a_taxonomy() {
+        if !php_bin_works() {
+            return;
+        }
+        let root = std::env::temp_dir().join(format!("oxidepress-venues-{}", std::process::id()));
+        let plugins = root.join("plugins");
+        let plugin_dir = plugins.join("venues");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(
+            plugin_dir.join("venues.php"),
+            r#"<?php
+/**
+ * Plugin Name: Venues
+ */
+add_action('init', function () {
+    $tax = register_taxonomy('venue', 'event', array(
+        'label' => 'Venues',
+        'labels' => array('singular_name' => 'Venue'),
+        'public' => true,
+        'show_ui' => true,
+        'hierarchical' => true,
+    ));
+    update_option('tax_ok', $tax instanceof WP_Taxonomy ? 'yes' : 'no');
+    update_option('tax_exists', taxonomy_exists('venue') ? 'yes' : 'no');
+    update_option('tax_category', taxonomy_exists('category') ? 'yes' : 'no');
+    $menu = register_taxonomy('nav_menu', 'post', array('label' => 'Nope'));
+    update_option('tax_menu', $menu instanceof WP_Error ? 'refused' : 'accepted');
+    $revision = register_taxonomy('place', 'revision', array('label' => 'Places'));
+    update_option('tax_revision', $revision instanceof WP_Error ? 'refused' : 'accepted');
+});
+"#,
+        )
+        .unwrap();
+
+        let host = Arc::new(MemHost::new());
+        let runtime =
+            PhpRuntime::spawn_php(php_program(), Some(&plugins), None, host.clone()).unwrap();
+        let found = discover(&plugins).unwrap();
+        let plugin = found.iter().find(|plugin| plugin.name == "Venues").unwrap();
+        runtime.load(plugin).unwrap();
+        let taxes = runtime.registered_taxonomies().unwrap();
+        assert_eq!(taxes.len(), 1, "{taxes:?}");
+        assert_eq!(taxes[0].name, "venue");
+        assert_eq!(taxes[0].label, "Venues");
+        assert_eq!(taxes[0].singular, "Venue");
+        assert_eq!(taxes[0].object_types, vec!["event"]);
+        assert!(taxes[0].show_ui);
+        assert!(taxes[0].hierarchical);
+        assert_eq!(host.get_option("tax_ok").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("tax_exists").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("tax_category").as_deref(), Some("yes"));
+        assert_eq!(host.get_option("tax_menu").as_deref(), Some("refused"));
+        assert_eq!(host.get_option("tax_revision").as_deref(), Some("refused"));
         assert!(runtime.last_error().is_none(), "{:?}", runtime.last_error());
         drop(runtime);
         let _ = std::fs::remove_dir_all(root);

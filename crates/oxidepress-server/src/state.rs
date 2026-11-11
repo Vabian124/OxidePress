@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to keep the PHP worker replaceable after startup.
+// Modified by Vabian124 on 2026-11-11 to keep plugin taxonomies in the admin.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::collections::HashMap;
@@ -16,6 +16,7 @@ use oxidepress_core::nonce::NonceManager;
 use oxidepress_core::post_type::PostTypeRegistry;
 use oxidepress_core::rewrite::RewriteRules;
 use oxidepress_core::shortcode::ShortcodeRegistry;
+use oxidepress_core::taxonomy::TaxonomyRegistry;
 use oxidepress_cron::CronManager;
 use oxidepress_db::options::OptionsManager;
 use oxidepress_fields::{FieldGroupRegistry, FieldStorage};
@@ -71,6 +72,8 @@ pub struct AppState {
     pub php_runtime: Arc<crate::php_plugins::PhpWorkers>,
     /// Built-in post types plus any a PHP plugin registered on `init`.
     pub post_types: PostTypeRegistry,
+    /// Built-in taxonomies plus any a PHP plugin registered on `init`.
+    pub taxonomies: TaxonomyRegistry,
     // Multisite support
     pub multisite_resolver: Option<Arc<oxidepress_multisite::SiteResolver>>,
     pub multisite_network: Option<Arc<RwLock<oxidepress_multisite::NetworkManager>>>,

@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to open a plugin post type in the block editor.
+// Modified by Vabian124 on 2026-11-11 to list a plugin taxonomy in the admin.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use axum::{
@@ -551,8 +551,33 @@ pub(crate) async fn admin_context(state: &AppState, session: &Session) -> tera::
         })
         .collect();
     ctx.insert("custom_post_types", &custom_post_types);
+    let custom_taxonomies: Vec<serde_json::Value> = state
+        .taxonomies
+        .get_all()
+        .into_iter()
+        .filter(|kind| !kind.builtin && kind.args.show_ui && kind.args.show_in_menu)
+        .take(40)
+        .map(|kind| {
+            serde_json::json!({
+                "name": kind.name,
+                "label": if kind.args.label.is_empty() { kind.name } else { kind.args.label },
+            })
+        })
+        .collect();
+    ctx.insert("custom_taxonomies", &custom_taxonomies);
 
     ctx
+}
+
+fn custom_taxonomy(
+    state: &AppState,
+    name: &str,
+) -> Option<oxidepress_core::taxonomy::TaxonomyDefinition> {
+    let kind = state.taxonomies.get(name)?;
+    if kind.builtin || !kind.args.show_ui {
+        return None;
+    }
+    Some(kind)
 }
 
 fn custom_type_label(state: &AppState, name: &str) -> Option<String> {
@@ -3218,21 +3243,45 @@ async fn taxonomy_page(
     Query(params): Query<TaxonomyQuery>,
 ) -> Html<String> {
     let mut ctx = admin_context(&state, &session).await;
-    let taxonomy = params.taxonomy.as_deref().unwrap_or("category");
-
-    let (taxonomy_label, singular_label, active_page) = match taxonomy {
-        "post_tag" => ("Tags", "Tag", "tags"),
-        _ => ("Categories", "Category", "categories"),
+    let requested = params.taxonomy.as_deref().unwrap_or("category");
+    let custom = custom_taxonomy(&state, requested);
+    let (taxonomy, taxonomy_label, singular_label, active_page) = if requested == "post_tag" {
+        (
+            "post_tag".to_string(),
+            "Tags".to_string(),
+            "Tag".to_string(),
+            "tags".to_string(),
+        )
+    } else if let Some(kind) = custom {
+        let label = if kind.args.label.is_empty() {
+            kind.name.clone()
+        } else {
+            kind.args.label.clone()
+        };
+        let singular = if kind.args.labels.singular_name.is_empty() {
+            label.clone()
+        } else {
+            kind.args.labels.singular_name.clone()
+        };
+        let active = format!("tax-{}", kind.name);
+        (kind.name, label, singular, active)
+    } else {
+        (
+            "category".to_string(),
+            "Categories".to_string(),
+            "Category".to_string(),
+            "categories".to_string(),
+        )
     };
 
-    ctx.insert("active_page", active_page);
-    ctx.insert("taxonomy", taxonomy);
-    ctx.insert("taxonomy_label", taxonomy_label);
-    ctx.insert("singular_label", singular_label);
+    ctx.insert("active_page", &active_page);
+    ctx.insert("taxonomy", &taxonomy);
+    ctx.insert("taxonomy_label", &taxonomy_label);
+    ctx.insert("singular_label", &singular_label);
 
     // Load terms for this taxonomy
     let tt_records = wp_term_taxonomy::Entity::find()
-        .filter(wp_term_taxonomy::Column::Taxonomy.eq(taxonomy))
+        .filter(wp_term_taxonomy::Column::Taxonomy.eq(taxonomy.clone()))
         .order_by_asc(wp_term_taxonomy::Column::TermId)
         .all(&state.db)
         .await

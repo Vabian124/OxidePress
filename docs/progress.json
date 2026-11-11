@@ -1,5 +1,5 @@
 {
-  "updated": "2026-11-09",
+  "updated": "2026-11-11",
   "commit": "ff248f8",
   "wordpress": "7.1.4",
   "db_version": 61833,
@@ -7,7 +7,7 @@
   "status_note": "docs/alpha-status.md",
   "probe": "crates/oxidepress-php/REAL-PLUGINS.md",
   "decision": "docs/adr/002-php-worker.en.md",
-  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, run its activation hook once, see the signed-in role, and be deactivated without stopping the others. Next is taxonomies.",
+  "summary": "The numbered single-site plan is done. A dropped-in plugin can boot, print assets, save a settings page, store a custom post type, edit that type in the block editor, read and write its post meta, register a taxonomy, run its activation hook once, see the signed-in role, and be deactivated without stopping the others.",
   "done": [
     {
       "id": "single-site-plan",
@@ -84,6 +84,13 @@
       "note": "add_post_meta and delete_post_meta are included. Values are text. An array is refused. A missing post or a refused type is not written."
     },
     {
+      "id": "taxonomies",
+      "title": "register_taxonomy with a list screen",
+      "status": "done",
+      "crate": "oxidepress-php",
+      "note": "A show_ui taxonomy is listed at /wp-admin/edit-tags.php?taxonomy={name}. category, post_tag, nav_menu, link_category, and post_format stay reserved."
+    },
+    {
       "id": "activation-callbacks",
       "title": "Run activation callbacks when an administrator activates a plugin",
       "status": "done",
@@ -106,15 +113,7 @@
     }
   ],
   "open": [],
-  "later": [
-    {
-      "id": "taxonomies",
-      "title": "register_taxonomy with a list screen",
-      "status": "later",
-      "crate": "oxidepress-php",
-      "note": "Not in the numbered plan. Next."
-    }
-  ],
+  "later": [],
   "out_of_plan": [
     {
       "id": "multisite",

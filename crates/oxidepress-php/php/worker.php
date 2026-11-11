@@ -1,5 +1,5 @@
 <?php
-// Modified by Vabian124 on 2026-11-09 to read and write post meta through the host.
+// Modified by Vabian124 on 2026-11-11 to register a plugin taxonomy.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 //
@@ -29,6 +29,7 @@ $oxidepress_plugin_file = '';
 $oxidepress_fatal_sent = false;
 $oxidepress_did = array();
 $oxidepress_post_types = array();
+$oxidepress_taxonomies = array();
 $oxidepress_admin_menus = array();
 $oxidepress_registered_settings = array();
 $oxidepress_settings_sections = array();
@@ -140,6 +141,12 @@ while (true) {
                 'id' => $oxidepress_request_id,
                 'ok' => true,
                 'types' => oxidepress_list_post_types(),
+            ));
+        } elseif ($op === 'taxonomies') {
+            oxidepress_write_frame(array(
+                'id' => $oxidepress_request_id,
+                'ok' => true,
+                'taxonomies' => oxidepress_list_taxonomies(),
             ));
         } elseif ($op === 'admin_save') {
             $group = isset($frame['group']) ? (string)$frame['group'] : '';
@@ -1021,6 +1028,145 @@ function oxidepress_type_is_internal($name)
         'wp_font_family',
         'wp_font_face',
     ), true);
+}
+
+function oxidepress_taxonomy_is_reserved($name)
+{
+    return in_array($name, array(
+        'category',
+        'post_tag',
+        'nav_menu',
+        'link_category',
+        'post_format',
+    ), true);
+}
+
+class WP_Taxonomy
+{
+    public $name = '';
+    public $object_type = array();
+    public $label = '';
+    public $labels;
+    public $public = true;
+    public $hierarchical = false;
+    public $args = array();
+
+    public function __construct($taxonomy, $object_type, $args)
+    {
+        $this->name = $taxonomy;
+        $this->object_type = array_values($object_type);
+        $this->args = is_array($args) ? $args : array();
+        $labels = isset($this->args['labels']) && is_array($this->args['labels']) ? $this->args['labels'] : array();
+        $this->labels = (object)$labels;
+        $this->label = isset($this->args['label']) ? oxidepress_text($this->args['label']) : '';
+        if ($this->label === '' && isset($labels['name'])) {
+            $this->label = oxidepress_text($labels['name']);
+        }
+        if ($this->label === '') {
+            $this->label = $taxonomy;
+        }
+        if (!isset($this->labels->singular_name) || (string)$this->labels->singular_name === '') {
+            $this->labels->singular_name = $this->label;
+        }
+        $this->public = array_key_exists('public', $this->args) ? !empty($this->args['public']) : true;
+        $this->hierarchical = !empty($this->args['hierarchical']);
+    }
+}
+
+function register_taxonomy($taxonomy, $object_type, $args = array())
+{
+    global $oxidepress_taxonomies;
+
+    $taxonomy = sanitize_key($taxonomy);
+    if ($taxonomy === '' || !oxidepress_token($taxonomy, 32) || oxidepress_taxonomy_is_reserved($taxonomy)) {
+        return new WP_Error('invalid_taxonomy', 'taxonomy is not allowed');
+    }
+    if (!is_array($object_type)) {
+        $object_type = array($object_type);
+    }
+    $types = array();
+    foreach ($object_type as $type) {
+        $type = sanitize_key($type);
+        if ($type !== '' && oxidepress_token($type, 20) && !oxidepress_type_is_internal($type)) {
+            $types[] = $type;
+        }
+        if (count($types) >= 8) {
+            break;
+        }
+    }
+    if (count($types) === 0) {
+        return new WP_Error('invalid_taxonomy', 'taxonomy has no object type');
+    }
+    if (!is_array($args)) {
+        $args = array();
+    }
+    $object = new WP_Taxonomy($taxonomy, $types, $args);
+    $oxidepress_taxonomies[$taxonomy] = $object;
+    return $object;
+}
+
+function taxonomy_exists($taxonomy)
+{
+    global $oxidepress_taxonomies;
+
+    $taxonomy = sanitize_key($taxonomy);
+    if (oxidepress_taxonomy_is_reserved($taxonomy)) {
+        return true;
+    }
+    return isset($oxidepress_taxonomies[$taxonomy]);
+}
+
+function oxidepress_list_taxonomies()
+{
+    global $oxidepress_taxonomies;
+
+    if (!did_action('init')) {
+        do_action('init');
+    }
+    $list = array();
+    foreach ($oxidepress_taxonomies as $name => $object) {
+        $name = (string)$name;
+        if (!oxidepress_token($name, 32) || oxidepress_taxonomy_is_reserved($name)) {
+            continue;
+        }
+        $args = isset($object->args) && is_array($object->args) ? $object->args : array();
+        $public = !empty($object->public);
+        $show_ui = array_key_exists('show_ui', $args) ? !empty($args['show_ui']) : $public;
+        $show_in_menu = array_key_exists('show_in_menu', $args) ? !empty($args['show_in_menu']) : $show_ui;
+        $types = array();
+        $object_type = isset($object->object_type) && is_array($object->object_type) ? $object->object_type : array();
+        foreach ($object_type as $type) {
+            $type = (string)$type;
+            if (oxidepress_token($type, 20) && !oxidepress_type_is_internal($type)) {
+                $types[] = $type;
+            }
+        }
+        if (count($types) === 0) {
+            continue;
+        }
+        $label = isset($object->label) ? oxidepress_text($object->label) : $name;
+        if ($label === '') {
+            $label = $name;
+        }
+        $singular = $label;
+        if (isset($object->labels->singular_name) && (string)$object->labels->singular_name !== '') {
+            $singular = oxidepress_text($object->labels->singular_name);
+        }
+        $list[] = array(
+            'name' => $name,
+            'label' => $label,
+            'singular' => $singular,
+            'object_types' => $types,
+            'public' => $public,
+            'hierarchical' => !empty($object->hierarchical),
+            'show_ui' => $show_ui,
+            'show_in_menu' => $show_in_menu,
+        );
+        if (count($list) >= 40) {
+            break;
+        }
+    }
+    return $list;
 }
 
 if (!defined('OBJECT')) {

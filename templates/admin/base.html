@@ -45,6 +45,13 @@
             <a href="/wp-admin/edit-tags.php?taxonomy=post_tag" class="menu-item submenu-item {% if active_page == 'tags' %}active{% endif %}">
                 <span>{{ __( key="Tags") }}</span>
             </a>
+            {% if custom_taxonomies is defined %}
+            {% for tax in custom_taxonomies %}
+            <a href="/wp-admin/edit-tags.php?taxonomy={{ tax.name }}" class="menu-item submenu-item {% if active_page == 'tax-' ~ tax.name %}active{% endif %}">
+                <span>{{ tax.label }}</span>
+            </a>
+            {% endfor %}
+            {% endif %}
             {% endif %}
             {% if can_upload_files | default(value=true) %}
             <a href="/wp-admin/upload.php" class="menu-item {% if active_page == 'media' %}active{% endif %}">

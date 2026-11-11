@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to render a plugin post type in the block editor.
+// Modified by Vabian124 on 2026-11-11 to render a plugin taxonomy in the admin menu.
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
 use std::path::Path;
@@ -165,5 +165,41 @@ mod tests {
         assert!(editor.contains("rest_base: 'event'"));
         assert!(editor.contains("path: '/wp/v2/' + settings.post.rest_base"));
         assert!(editor.contains("initializeEditor('editor', settings.post.type"));
+    }
+
+    #[test]
+    fn custom_taxonomy_is_listed_in_the_admin_menu() {
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../..")
+            .join("templates")
+            .join("admin");
+        let mut tera = init_admin_tera(dir.to_str().expect("utf8 path")).expect("admin templates");
+        tera.register_function(
+            "__",
+            |args: &HashMap<String, tera::Value>| -> tera::Result<tera::Value> {
+                Ok(args
+                    .get("key")
+                    .cloned()
+                    .unwrap_or_else(|| tera::Value::String(String::new())))
+            },
+        );
+        let mut ctx = tera::Context::new();
+        ctx.insert("taxonomy", "venue");
+        ctx.insert("taxonomy_label", "Venues");
+        ctx.insert("singular_label", "Venue");
+        ctx.insert("active_page", "tax-venue");
+        ctx.insert("terms", &serde_json::json!([]));
+        ctx.insert(
+            "custom_taxonomies",
+            &serde_json::json!([{ "name": "venue", "label": "Venues" }]),
+        );
+        let html = tera
+            .render("admin/taxonomies.html", &ctx)
+            .expect("render taxonomy screen");
+        assert!(html.contains("edit-tags.php?taxonomy=venue"));
+        assert!(html.contains("Venues"));
+        assert!(html.contains("Add New Venue"));
+        assert!(html.contains("const taxonomy = 'venue'"));
+        assert!(html.contains("class=\"menu-item submenu-item active\""));
     }
 }

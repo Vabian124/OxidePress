@@ -1,4 +1,4 @@
-// Modified by Vabian124 on 2026-11-09 to store plugin post meta in wp_postmeta.
+// Modified by Vabian124 on 2026-11-11 to adopt plugin taxonomies at boot.
 
 // Original work: RustPress by Ryuji Yasukochi.
 // Licensed under the GNU General Public License, version 2.
@@ -238,8 +238,10 @@ async fn main() -> Result<()> {
         .boot(&plugin_registry, &hooks, &shortcodes)
         .await;
     let post_types = oxidepress_core::PostTypeRegistry::new();
+    let taxonomies = oxidepress_core::TaxonomyRegistry::new();
     if let Some(runtime) = php_runtime.runtime() {
         php_runtime.adopt_post_types(&runtime, &post_types);
+        php_runtime.adopt_taxonomies(&runtime, &taxonomies);
     }
 
     // Initialize cron system (before AppState so it can be stored in state)
@@ -410,6 +412,7 @@ async fn main() -> Result<()> {
         wasm_host,
         php_runtime,
         post_types: post_types.clone(),
+        taxonomies: taxonomies.clone(),
         multisite_resolver,
         multisite_network,
     });
