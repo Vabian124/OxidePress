@@ -1,6 +1,6 @@
 {
   "updated": "2026-11-11",
-  "commit": "8892f1d",
+  "commit": "356db86",
   "wordpress": "7.1.4",
   "db_version": 61833,
   "plan": "docs/compatibility-plan.md",
@@ -120,6 +120,7 @@
       "title": "get_comment_meta and update_comment_meta for a dropped-in plugin",
       "status": "done",
       "crate": "oxidepress-php",
+      "commit": "356db86",
       "note": "delete_comment_meta is included. Values are text. An array is refused. A missing comment is not written. Deleting the comment removes its meta."
     },
     {
